@@ -141,7 +141,7 @@ jobs:
       packages: ${{ steps.set.outputs.packages }}
     steps:
       - name: Checkout dozenos-build
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-build
           ref: rolling
@@ -175,7 +175,7 @@ jobs:
         pkg: ${{ fromJson(needs.discover.outputs.packages) }}
     steps:
       - name: Checkout dozenos-build
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-build
           ref: rolling
@@ -187,7 +187,7 @@ jobs:
       # rebuild-packages.yml comment) -- /dozenos-rebrand must exist at that
       # exact absolute path inside the build container.
       - name: Checkout dozenos-rebrand
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
           token: ${{ secrets.BUILD_PAT }}
@@ -195,7 +195,7 @@ jobs:
 
       - name: Free disk space (large recipes only)
         if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.pkg)
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: false
 
@@ -222,7 +222,7 @@ jobs:
           fi
 
       - name: Upload built package(s)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: deb-${{ matrix.pkg }}
           path: dozenos-build/scripts/package-build/${{ matrix.pkg }}/*.deb
@@ -265,12 +265,12 @@ jobs:
       # the version.json commit-back step at the end, and to host
       # minisign.pub (see ./minisign.pub, ../../README.md).
       - name: Checkout dozenos-nightly-build (this repo)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: nightly-build
 
       - name: Checkout dozenos-build
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-build
           ref: rolling
@@ -278,7 +278,7 @@ jobs:
           path: dozenos-build
 
       - name: Checkout dozenos-rebrand
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
           token: ${{ secrets.BUILD_PAT }}
@@ -292,7 +292,7 @@ jobs:
       # package-smoketest.yml, which does scan history; see this file's
       # header comment).
       - name: Download all built .deb artifacts from this run
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: 'deb-*'
           path: dozenos-debs
