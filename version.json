@@ -1,15 +1,14 @@
 {
-  "_seed_note": "Placeholder committed before this repo's first real nightly build. release/gen-version-json.sh (in dozenos/dozenos-rebrand) overwrites this file's schema fields on every successful nightly run in .github/workflows/nightly.yml -- see that workflow and dozenos-rebrand/DISTRIBUTION.md section 4. This '_seed_note' key is not part of the schema and disappears once a real run overwrites the file.",
-  "version": "0000.00.00-0000-rolling",
+  "version": "2026.07.08-1600-rolling",
   "iso": {
-    "name": "",
-    "sha256": "",
-    "url": null
+    "name": "dozenos-2026.07.08-1600-rolling-generic-amd64.iso",
+    "sha256": "272731d982e826bfbef63fbad15c31de448b0a4da3689c2e8e44d112d860ca5f",
+    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.08-1600-rolling/dozenos-2026.07.08-1600-rolling-generic-amd64.iso"
   },
   "minisig": {
-    "name": "",
-    "url": null
+    "name": "dozenos-2026.07.08-1600-rolling-generic-amd64.iso.minisig",
+    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.08-1600-rolling/dozenos-2026.07.08-1600-rolling-generic-amd64.iso.minisig"
   },
   "minisign_pubkey_file": "minisign.pub",
-  "published_at": null
+  "published_at": "2026-07-08T18:23:40Z"
 }
