@@ -154,10 +154,10 @@ jobs:
         run: |
           set -euo pipefail
           others=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
-            ! -name linux-kernel ! -name shim-signed -printf '%f\n' | sort)
+            ! -name linux-kernel ! -name shim-signed ! -name vpp -printf '%f\n' | sort)
           packages=$(printf '%s\nlinux-kernel\n' "$others" | jq -R . | jq -sc .)
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
-          echo "I: full nightly package matrix: $packages"
+          echo "I: full nightly package matrix (vpp built inside linux-kernel leg, not separate): $packages"
 
   # --------------------------------------------------------------------- #
   # Job: build-packages -- same build-step shape as dozenos-build's own
