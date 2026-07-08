@@ -57,10 +57,15 @@ name: DozenOS nightly build
 
 on:
   schedule:
-    # 02:17 UTC daily. Off the top of the hour on purpose (avoids the
-    # well-known GitHub Actions scheduler pile-up at :00); 02:17 is simply
-    # late-night UTC with no other significance.
-    - cron: '17 2 * * *'
+    # 04:17 UTC daily -- deliberately ~1h AFTER the shared mirror self-sync
+    # cron ('17 3 * * *' in dozenos-rebrand/sync.yml.template). The sync jobs
+    # run in parallel and finish within minutes, so by 04:17 the day's syncs
+    # are quiescent; the check-changes gate below then snapshots every mirror's
+    # current HEAD and builds ONCE for whatever changed (a mirror that syncs
+    # later than this snapshot is simply picked up by the NEXT tick -- see
+    # check-changes' own comment). Off the top of the hour on purpose (avoids
+    # the well-known GitHub Actions scheduler pile-up at :00).
+    - cron: '17 4 * * *'
   workflow_dispatch:
     inputs:
       version_override:
@@ -83,11 +88,118 @@ permissions:
 
 jobs:
   # --------------------------------------------------------------------- #
+  # Job: check-changes -- the "build only when something actually changed"
+  # gate. A nightly ISO is a full from-scratch rebuild (~2-3h); running it
+  # every day when no mirror moved wastes that, and running it once per
+  # changed mirror (N full ISOs/day) is worse. This job snapshots the CURRENT
+  # rolling HEAD of every dozenos/* mirror -- INCLUDING dozenos-build (a change
+  # to its build tooling/flavors alters the ISO even with identical package
+  # sources) and dozenos-rebrand (its transform/overlay/flavor toolkit does
+  # too) -- and compares that whole set against the SHAs recorded when the LAST
+  # nightly ISO was built (mirror-state.json on this repo's default branch,
+  # written by build-iso below):
+  #
+  #   - identical set  -> changed=false -> set-version + discover (and thus
+  #     everything downstream) are skipped; the nightly ends in seconds having
+  #     built nothing.
+  #   - any difference -> changed=true  -> the normal full build runs, and
+  #     build-iso records THIS job's observed SHA set as the new baseline.
+  #
+  # Batching is automatic: whatever has synced by 04:17 UTC (the cron is offset
+  # after the shared sync cron -- see `on:` above) is captured in one snapshot,
+  # so the day's changes collapse into ONE build. A mirror that syncs AFTER
+  # this snapshot is not lost -- its HEAD will differ from the recorded
+  # baseline at the NEXT tick, so it is merely deferred one tick. Persisting
+  # the SNAPSHOT (not a fresh re-read at commit time) is what guarantees that:
+  # see build-iso's "Commit ... to default branch" step.
+  #
+  # `workflow_dispatch` always forces a build (a manual run means "build now",
+  # gate or no gate).
+  # --------------------------------------------------------------------- #
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.gate.outputs.changed }}
+      shas: ${{ steps.gate.outputs.shas }}
+    steps:
+      - name: Checkout dozenos-nightly-build (for the recorded baseline)
+        uses: actions/checkout@v7
+
+      - name: Snapshot mirror HEADs and compare to last-built baseline
+        id: gate
+        env:
+          # Enumerating org repos + reading each mirror's rolling HEAD is a
+          # cross-repo read -- the job's own GITHUB_TOKEN only sees this repo,
+          # so use BUILD_PAT (the same PAT every other cross-repo step here
+          # already uses; see dozenos-rebrand/CI-SECRETS.md).
+          GH_TOKEN: ${{ secrets.BUILD_PAT }}
+        run: |
+          set -euo pipefail
+
+          # Every dozenos/* repo that HAS a `rolling` branch == exactly the
+          # mirror set (all package mirrors + dozenos-build); enumerating by
+          # branch auto-covers mirrors added/removed later with no hand-kept
+          # list here. dozenos-nightly-build (this repo) is skipped explicitly:
+          # it has no `rolling` branch anyway, but guarding also stops the
+          # version.json/mirror-state.json commits below from ever feeding back
+          # into this fingerprint (which would self-trigger every tick).
+          declare -A shas
+          while read -r r; do
+            [ -n "$r" ] || continue
+            [ "$r" = "dozenos-nightly-build" ] && continue
+            if sha=$(gh api "repos/dozenos/$r/commits/rolling" --jq '.sha' 2>/dev/null); then
+              [ -n "$sha" ] && shas["$r"]="$sha"
+            fi
+          done < <(gh api --paginate orgs/dozenos/repos --jq '.[].name' | sort -u)
+
+          # dozenos-rebrand has no `rolling` branch (it is the toolkit repo, not
+          # a mirror) -- track its DEFAULT-branch HEAD instead. A change to its
+          # rename-transform rules / overlays / flavors changes the ISO as much
+          # as any package source change, so it must be in the fingerprint.
+          if rsha=$(gh api "repos/dozenos/dozenos-rebrand/commits/HEAD" --jq '.sha' 2>/dev/null); then
+            [ -n "$rsha" ] && shas["dozenos-rebrand"]="$rsha"
+          fi
+
+          # Canonical (keys sorted) JSON object {"repo":"sha",...} so string
+          # equality against the stored baseline is stable.
+          current=$(for k in "${!shas[@]}"; do
+              printf '%s\t%s\n' "$k" "${shas[$k]}"
+            done | jq -R -s 'split("\n") | map(select(length>0) | split("\t"))
+              | map({(.[0]): .[1]}) | add // {}' | jq -Sc .)
+          echo "I: current mirror fingerprint ($(printf '%s' "$current" | jq 'length') repos): $current"
+
+          baseline='{}'
+          if [ -f mirror-state.json ]; then
+            baseline=$(jq -Sc . mirror-state.json)
+          fi
+
+          # Emit the OBSERVED set for build-iso to persist verbatim after a
+          # successful build (persisting this snapshot -- not a fresh re-read --
+          # is what makes a mid-build sync roll to the next tick rather than be
+          # silently swallowed).
+          echo "shas=$current" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "I: workflow_dispatch -- forcing a build regardless of the gate."
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [ "$current" = "$baseline" ]; then
+            echo "I: no mirror changed since the last nightly ISO -- skipping this build."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "I: mirror change detected since the last nightly ISO -- building. Diff (baseline vs current):"
+            diff <(printf '%s' "$baseline" | jq -r 'to_entries[] | "\(.key) \(.value)"' | sort) \
+                 <(printf '%s' "$current"  | jq -r 'to_entries[] | "\(.key) \(.value)"' | sort) || true
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # --------------------------------------------------------------------- #
   # Job: set-version -- compute the one VERSION string shared by every
   # later job (package builds don't need it, but the ISO build, signing,
   # version.json, and release tag all must agree on the exact same value).
   # --------------------------------------------------------------------- #
   set-version:
+    needs: check-changes
+    if: needs.check-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
@@ -136,6 +248,8 @@ jobs:
   # Secure Boot flavor must mirror efi-boot-shim + build shim-unsigned first.)
   # --------------------------------------------------------------------- #
   discover:
+    needs: check-changes
+    if: needs.check-changes.outputs.changed == 'true'
     runs-on: ubuntu-latest
     outputs:
       packages: ${{ steps.set.outputs.packages }}
@@ -153,11 +267,29 @@ jobs:
         working-directory: dozenos-build
         run: |
           set -euo pipefail
+          # vpp is EXCLUDED as its own matrix leg (a third special-case
+          # alongside linux-kernel and shim-signed): the linux-kernel leg
+          # ALREADY builds vpp -- its accel-ppp-ng module needs the vpp
+          # libraries (HAVE_VPP=1), so scripts/package-build/linux-kernel/
+          # build-accel-ppp-ng.sh runs `cd ../vpp && ./build.py` and then
+          # `cp ../vpp/*.deb ${CWD}` (its own comment: "CI will get VPP .deb
+          # here"), landing the full vpp .deb set INSIDE the linux-kernel
+          # recipe dir -- which the linux-kernel leg's `upload-artifact`
+          # (path: .../linux-kernel/*.deb) already ships as deb-linux-kernel.
+          # Keeping a SEPARATE vpp leg meant vpp was built TWICE (once here,
+          # once inside linux-kernel) from two independently-fetched commits
+          # of the moving stable/2510 branch, so BOTH .deb sets (differing only
+          # in git-hash version suffix, e.g. .7911d37ba vs .98a60d673) landed
+          # in the ISO's ephemeral apt pool -- dpkg-scanpackages then collapsed
+          # the duplicates and make-ephemeral-apt-repo.sh's stanza==.deb-count
+          # guard failed the whole ISO build. Building vpp ONLY inside
+          # linux-kernel yields one coherent vpp set and costs zero extra
+          # wall-clock (linux-kernel was already building it regardless).
           others=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
             ! -name linux-kernel ! -name shim-signed ! -name vpp -printf '%f\n' | sort)
           packages=$(printf '%s\nlinux-kernel\n' "$others" | jq -R . | jq -sc .)
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
-          echo "I: full nightly package matrix (vpp built inside linux-kernel leg, not separate): $packages"
+          echo "I: full nightly package matrix (vpp built inside linux-kernel, not a separate leg): $packages"
 
   # --------------------------------------------------------------------- #
   # Job: build-packages -- same build-step shape as dozenos-build's own
@@ -241,7 +373,7 @@ jobs:
   # "latest" pointer (DISTRIBUTION.md §4).
   # --------------------------------------------------------------------- #
   build-iso:
-    needs: [set-version, build-packages]
+    needs: [check-changes, set-version, build-packages]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
@@ -411,18 +543,27 @@ jobs:
       # DISTRIBUTION.md §4 leaves the choice of default-branch-commit vs.
       # latest-tagged-release vs. both to item #17; this repo does the
       # default-branch-commit form since it needs no extra release alias).
-      - name: Commit version.json to default branch
+      - name: Commit version.json + mirror-state.json to default branch
         working-directory: nightly-build
+        env:
+          # The fingerprint check-changes OBSERVED at the start of this run.
+          # Persisting THIS (not a fresh re-read) is deliberate: a mirror that
+          # synced while this ~2-3h build was running is intentionally NOT
+          # recorded as "built", so the next tick rebuilds for it. See
+          # check-changes' own comment.
+          MIRROR_SHAS: ${{ needs.check-changes.outputs.shas }}
         run: |
           set -euo pipefail
+          # New change-gate baseline: what this build actually consumed.
+          printf '%s\n' "$MIRROR_SHAS" | jq -S . > mirror-state.json
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add version.json
+          git add version.json mirror-state.json
           if git diff --cached --quiet; then
-            echo "I: version.json unchanged, nothing to commit"
+            echo "I: version.json + mirror-state.json unchanged, nothing to commit"
             exit 0
           fi
-          git commit -m "chore: update version.json for ${VERSION}"
+          git commit -m "chore: update version.json + mirror-state.json for ${VERSION}"
           # `github.event.repository` is unset on this workflow's `schedule`
           # trigger (the primary/unattended path -- see this file's own
           # header), so `github.event.repository.default_branch` is always
