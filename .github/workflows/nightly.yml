@@ -525,6 +525,16 @@ jobs:
         if: ${{ always() && env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
         run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
 
+      # build-dozenos-image ran under sudo INSIDE the container, so
+      # dozenos-build/build/ and the ISO come back root-owned on the
+      # runner. The sign step below runs as the runner user and minisign
+      # must create "<iso>.minisig" NEXT TO the ISO in that directory --
+      # root ownership made it die with "Permission denied" (run
+      # 28946916959, the first run to get past the ISO build itself).
+      # Reclaim ownership host-side before anything needs to write there.
+      - name: Reclaim ownership of build artifacts
+        run: sudo chown -R "$(id -u):$(id -g)" dozenos-build/build
+
       # build-dozenos-image copies live-image-amd64.hybrid.iso to exactly
       # this name itself (verified: scripts/image-build/build-dozenos-image,
       # the `iso_file = f"dozenos-{version}-{build_flavor}-{architecture}.iso"`
