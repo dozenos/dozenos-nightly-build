@@ -1,0 +1,413 @@
+# DozenOS nightly BUILD + STORE workflow (item #17).
+#
+# This repo (dozenos/dozenos-nightly-build) deliberately DIVERGES from
+# upstream VyOS's own `vyos-nightly-build`, which is STORE-ONLY (a human/other
+# pipeline uploads assets to it). This workflow both BUILDS a full DozenOS
+# generic ISO from scratch every night AND STORES it as a GitHub Release in
+# this same repo -- see ../../../dozenos-rebrand/DISTRIBUTION.md §2(b) for the
+# durable-artifact-tier rationale and ../../../dozenos-rebrand/ISO-BUILD.md §5
+# ("what item #17 should do instead") for why a full in-run package rebuild,
+# not a best-effort scan of past dozenos-build CI history, is required here:
+# a nightly RELEASE needs a coherent, guaranteed-complete .deb set, not
+# whatever happened to be rebuilt recently in dozenos-build's own CI.
+#
+# Package-source strategy (DECIDED): build every C2 package (plus the
+# linux-kernel family) IN THIS RUN, matching dozenos-build's own
+# rebuild-packages.yml / rebuild-dispatch.yml build-step shape (container
+# ghcr.io/dozenos/dozenos-build:rolling, /dozenos + /dozenos-rebrand mounts),
+# then feed the resulting deb-* artifacts into the SAME ephemeral in-job apt
+# repo mechanism (release/make-ephemeral-apt-repo.sh, item #13) the
+# integration smoketest already uses. This is option (a) from the task specs,
+# chosen over option (b) (downloading dozenos-build's last successful
+# rebuild-packages.yml artifacts) precisely because (b) can only ever recover
+# whichever packages happened to change recently -- see ISO-BUILD.md §5's
+# explicit note that item #17 should do a full rebuild instead.
+#
+# Helpers reused, not duplicated (see dozenos-rebrand/DISTRIBUTION.md,
+# ISO-BUILD.md, SB-SIGNING.md for the specs of each):
+#   dozenos-rebrand/release/make-ephemeral-apt-repo.sh -- ephemeral apt repo
+#   dozenos-rebrand/release/inject-mok-cert.sh          -- MOK inject/shred
+#   dozenos-rebrand/release/gen-version-json.sh         -- version.json
+#   dozenos-rebrand/release/sign-and-publish.sh          -- minisign + gh release
+#
+# Secrets/vars consumed (see ../../../dozenos-rebrand/CI-SECRETS.md,
+# authoritative for names):
+#   secrets.BUILD_PAT            cross-repo checkout of dozenos-build +
+#                                 dozenos-rebrand (this repo is not either of
+#                                 those repos, so every checkout of them here
+#                                 is cross-repo)
+#   secrets.MOK_SIGNING_KEY       )  guarded -- no-op (unsigned kernel,
+#   secrets.MOK_SIGNING_CERT      )  identical to today) when unset
+#   secrets.MINISIGN_SECRET_KEY   )  required for the sign+release step;
+#   secrets.MINISIGN_PASSWORD     )  sign-and-publish.sh fails loudly if unset
+#   secrets.GITHUB_TOKEN          same-repo Release publish + version.json
+#                                 commit -- NOT BUILD_PAT, see
+#                                 DISTRIBUTION.md §7 ("GITHUB_TOKEN suffices")
+#   vars.BUILD_BY                 build-identity string (non-secret)
+#
+# NO `uses: vyos/*` anywhere in this file (dozenos-rebrand/WORKFLOW-POLICY.md
+# hard rule) and zero literal "vyos" in any form.
+#
+# NOTE (deferred): this workflow is authored but NOT live -- the `schedule`
+# trigger below does not start firing until this repo is actually pushed to
+# github.com/dozenos/dozenos-nightly-build (blocked on item #20), the secrets
+# above are injected on this repo, and the pipeline has been reviewed. See
+# dozenos-rebrand/CI-SECRETS.md and DOZENOS-CICD-PLAN.md.
+name: DozenOS nightly build
+
+on:
+  schedule:
+    # 02:17 UTC daily. Off the top of the hour on purpose (avoids the
+    # well-known GitHub Actions scheduler pile-up at :00); 02:17 is simply
+    # late-night UTC with no other significance.
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Version string to build/tag instead of the computed "YYYY.MM.DD-HHMM-rolling" (e.g. for a manual re-run of a specific nightly). Leave blank for the normal auto-computed version.'
+        required: false
+        type: string
+
+# Only one nightly build/publish in flight at a time -- a second scheduled or
+# manually-dispatched run overlapping the first would race on the same
+# default-branch version.json commit and could double-publish a Release tag
+# collision. Never cancel a build already in progress (cancel-in-progress:
+# false) -- a partially-built ISO is not something we want to silently
+# abandon; a second run instead queues behind the first.
+concurrency:
+  group: dozenos-nightly-build
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------- #
+  # Job: set-version -- compute the one VERSION string shared by every
+  # later job (package builds don't need it, but the ISO build, signing,
+  # version.json, and release tag all must agree on the exact same value).
+  # --------------------------------------------------------------------- #
+  set-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - name: Compute nightly version string
+        id: v
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.version_override }}" ]; then
+            VERSION="${{ inputs.version_override }}"
+            echo "I: using dispatch override version: $VERSION"
+          else
+            # MUST be passed explicitly to build-dozenos-image's --version --
+            # its own default ("<rolling-version-from-data/versions>-rolling-
+            # <timestamp>", e.g. "1.5-rolling-202607080217") does NOT match
+            # DozenOS's release/tag scheme (DISTRIBUTION.md §3). Verified by
+            # reading the reproduced build-dozenos-image directly -- see this
+            # repo's authoring notes / dozenos-rebrand/ISO-BUILD.md.
+            VERSION="$(date -u +%Y.%m.%d-%H%M)-rolling"
+            echo "I: computed version: $VERSION"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  # --------------------------------------------------------------------- #
+  # Job: discover -- full package list (NOT a diff/changed-only discovery
+  # like dozenos-build's own rebuild-packages.yml push trigger -- a nightly
+  # release needs every package, every night). linux-kernel is collapsed
+  # into one matrix entry (its own bespoke build.py builds the kernel plus
+  # every OOT module in one invocation when given no --packages filter --
+  # see dozenos-rebrand/DEP-GRAPH.md and rebuild-dispatch.yml's own comment
+  # for the same pattern).
+  # --------------------------------------------------------------------- #
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.set.outputs.packages }}
+    steps:
+      - name: Checkout dozenos-build
+        uses: actions/checkout@v6
+        with:
+          repository: dozenos/dozenos-build
+          ref: rolling
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-build
+
+      - name: List every C2 package (full nightly rebuild, not a diff)
+        id: set
+        working-directory: dozenos-build
+        run: |
+          set -euo pipefail
+          others=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
+            ! -name linux-kernel -printf '%f\n' | sort)
+          packages=$(printf '%s\nlinux-kernel\n' "$others" | jq -R . | jq -sc .)
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "I: full nightly package matrix: $packages"
+
+  # --------------------------------------------------------------------- #
+  # Job: build-packages -- same build-step shape as dozenos-build's own
+  # rebuild-packages.yml / rebuild-dispatch.yml (container
+  # ghcr.io/dozenos/dozenos-build:rolling, /dozenos + /dozenos-rebrand
+  # mounts, deb-<pkg> artifact upload) -- reused here rather than
+  # reimplemented differently, per the task's "reuse the #8 shape" guidance.
+  # --------------------------------------------------------------------- #
+  build-packages:
+    needs: discover
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pkg: ${{ fromJson(needs.discover.outputs.packages) }}
+    steps:
+      - name: Checkout dozenos-build
+        uses: actions/checkout@v6
+        with:
+          repository: dozenos/dozenos-build
+          ref: rolling
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-build
+
+      # Required for every C2 recipe's `pre_build_hook =
+      # "/dozenos-rebrand/rename-transform.sh ."` (see dozenos-build's own
+      # rebuild-packages.yml comment) -- /dozenos-rebrand must exist at that
+      # exact absolute path inside the build container.
+      - name: Checkout dozenos-rebrand
+        uses: actions/checkout@v6
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-rebrand
+
+      - name: Free disk space (large recipes only)
+        if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.pkg)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+
+      - name: Build ${{ matrix.pkg }}
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.pkg }}" = "linux-kernel" ]; then
+            # linux-kernel family: one build.py invocation, no --packages
+            # filter -- builds the kernel plus every OOT module block,
+            # matching dozenos-build's rebuild-dispatch.yml.
+            docker run --rm \
+              -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+              -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
+              -w /dozenos \
+              ghcr.io/dozenos/dozenos-build:rolling \
+              bash -c "cd scripts/package-build/linux-kernel && python3 build.py"
+          else
+            docker run --rm \
+              -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+              -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
+              -w /dozenos \
+              ghcr.io/dozenos/dozenos-build:rolling \
+              bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
+          fi
+
+      - name: Upload built package(s)
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.pkg }}
+          path: dozenos-build/scripts/package-build/${{ matrix.pkg }}/*.deb
+          if-no-files-found: warn
+          # Consumed once, later in this SAME run, by the build-iso job
+          # below -- never meant to outlive this workflow run (unlike
+          # dozenos-build's own rebuild-packages.yml, whose deb-* artifacts
+          # need to survive for other, later, unrelated runs to scan).
+          retention-days: 1
+
+  # --------------------------------------------------------------------- #
+  # Job: build-iso -- assemble the ephemeral apt repo from every package
+  # just built, build the signed generic ISO with an EXPLICIT --version,
+  # sign it, generate version.json, publish the GitHub Release in THIS
+  # repo, and commit version.json to the default branch as the stable
+  # "latest" pointer (DISTRIBUTION.md §4).
+  # --------------------------------------------------------------------- #
+  build-iso:
+    needs: [set-version, build-packages]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      # contents: write needed for gh release create (via GITHUB_TOKEN,
+      # same-repo -- DISTRIBUTION.md §7) and for the version.json commit
+      # back to this repo's own default branch below.
+      contents: write
+    env:
+      VERSION: ${{ needs.set-version.outputs.version }}
+      DEBIAN_MIRROR: http://deb.debian.org/debian/
+      DEBIAN_SECURITY_MIRROR: http://deb.debian.org/debian-security
+    steps:
+      # Self-checkout: this repo (dozenos/dozenos-nightly-build). Needed for
+      # the version.json commit-back step at the end, and to host
+      # minisign.pub (see ./minisign.pub, ../../README.md).
+      - name: Checkout dozenos-nightly-build (this repo)
+        uses: actions/checkout@v6
+        with:
+          path: nightly-build
+
+      - name: Checkout dozenos-build
+        uses: actions/checkout@v6
+        with:
+          repository: dozenos/dozenos-build
+          ref: rolling
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-build
+
+      - name: Checkout dozenos-rebrand
+        uses: actions/checkout@v6
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-rebrand
+
+      # Every deb-<pkg> artifact uploaded by build-packages above, from
+      # THIS SAME run (no run-id given -- actions/download-artifact
+      # defaults to the current workflow run), merged flat into one
+      # directory -- this is the FULL, guaranteed-fresh package set, not a
+      # best-effort scan of past runs (contrast dozenos-build's own
+      # package-smoketest.yml, which does scan history; see this file's
+      # header comment).
+      - name: Download all built .deb artifacts from this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: 'deb-*'
+          path: dozenos-debs
+          merge-multiple: true
+
+      - name: Install minisign (for the sign step below)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+
+      # No-op (does not run at all) when the org secrets are not
+      # configured -- identical to an unsigned-kernel build in that case.
+      # See dozenos-rebrand/SB-SIGNING.md.
+      - name: Inject MOK signing key+cert
+        if: ${{ secrets.MOK_SIGNING_KEY != '' && secrets.MOK_SIGNING_CERT != '' }}
+        env:
+          MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
+          MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
+        run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build
+
+      # Ephemeral apt repo is built INSIDE this same container invocation,
+      # right before build-dozenos-image runs, so its `file://<output-dir>`
+      # value is already correct from build-dozenos-image's own point of
+      # view (both run in the same mount namespace -- no host/container path
+      # mismatch). See dozenos-rebrand/ISO-BUILD.md §3's path-mismatch
+      # lesson. --version is passed EXPLICITLY (see set-version job above)
+      # -- build-dozenos-image's own default does not match DozenOS's
+      # release scheme.
+      - name: Build signed DozenOS generic ISO
+        run: |
+          docker run --rm \
+            --sysctl net.ipv6.conf.lo.disable_ipv6=0 --privileged \
+            -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+            -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
+            -v "${{ github.workspace }}/dozenos-debs:/dozenos-debs:ro" \
+            -w /dozenos \
+            -e BUILD_BY="${{ vars.BUILD_BY }}" \
+            -e DEBIAN_MIRROR="${{ env.DEBIAN_MIRROR }}" \
+            -e DEBIAN_SECURITY_MIRROR="${{ env.DEBIAN_SECURITY_MIRROR }}" \
+            -e VERSION="${{ env.VERSION }}" \
+            ghcr.io/dozenos/dozenos-build:rolling \
+            bash -c '
+              set -euo pipefail
+              DOZENOS_MIRROR=""
+              if [ -n "$(find /dozenos-debs -name "*.deb" -print -quit 2>/dev/null)" ]; then
+                DOZENOS_MIRROR=$(/dozenos-rebrand/release/make-ephemeral-apt-repo.sh /dozenos-debs /tmp/dozenos-apt-repo)
+                echo "I: ephemeral DozenOS apt repo built -- --dozenos-mirror \"$DOZENOS_MIRROR\""
+              else
+                echo "W: no .deb files found under /dozenos-debs -- unexpected for a full nightly rebuild; building with an empty --dozenos-mirror anyway rather than failing the whole nightly"
+              fi
+              sudo --preserve-env ./build-dozenos-image \
+                --architecture amd64 \
+                --build-by "$BUILD_BY" \
+                --build-type release \
+                --debian-mirror "$DEBIAN_MIRROR" \
+                --debian-security-mirror "$DEBIAN_SECURITY_MIRROR" \
+                --version "$VERSION" \
+                --dozenos-mirror "$DOZENOS_MIRROR" \
+                generic
+            '
+
+      # Always runs (even if the build step above failed) to shrink the
+      # window the decoded private key sits in this job's own git worktree.
+      # No-op when the inject step above did not run either.
+      - name: Clean up injected MOK key
+        if: ${{ always() && secrets.MOK_SIGNING_KEY != '' && secrets.MOK_SIGNING_CERT != '' }}
+        run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
+
+      # build-dozenos-image copies live-image-amd64.hybrid.iso to exactly
+      # this name itself (verified: scripts/image-build/build-dozenos-image,
+      # the `iso_file = f"dozenos-{version}-{build_flavor}-{architecture}.iso"`
+      # line + the `shutil.copy(...)` that follows it) -- no renaming needed
+      # here.
+      - name: Locate built ISO
+        id: iso
+        run: |
+          set -euo pipefail
+          iso_path="dozenos-build/build/dozenos-${VERSION}-generic-amd64.iso"
+          if [ ! -f "$iso_path" ]; then
+            echo "::error::expected ISO not found at $iso_path" >&2
+            exit 1
+          fi
+          echo "path=$iso_path" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename -- "$iso_path")" >> "$GITHUB_OUTPUT"
+
+      - name: Generate version.json
+        run: |
+          dozenos-rebrand/release/gen-version-json.sh \
+            --version "$VERSION" \
+            --iso-path "${{ steps.iso.outputs.path }}" \
+            --release-url "https://github.com/dozenos/dozenos-nightly-build/releases/download/${VERSION}" \
+            --out nightly-build/version.json
+
+      # Signs the ISO (minisign) and publishes the GitHub Release in THIS
+      # repo. GITHUB_TOKEN (not BUILD_PAT) is sufficient -- same-repo
+      # publish, see dozenos-rebrand/DISTRIBUTION.md §7.
+      - name: Sign ISO and publish GitHub Release
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          dozenos-rebrand/release/sign-and-publish.sh \
+            --iso "${{ steps.iso.outputs.path }}" \
+            --version-json nightly-build/version.json \
+            --tag "$VERSION" \
+            --repo dozenos/dozenos-nightly-build \
+            --title "DozenOS nightly $VERSION"
+
+      # Updates the stable "latest" version.json on the default branch (in
+      # addition to the frozen copy already attached to the Release above --
+      # DISTRIBUTION.md §4 leaves the choice of default-branch-commit vs.
+      # latest-tagged-release vs. both to item #17; this repo does the
+      # default-branch-commit form since it needs no extra release alias).
+      - name: Commit version.json to default branch
+        working-directory: nightly-build
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add version.json
+          if git diff --cached --quiet; then
+            echo "I: version.json unchanged, nothing to commit"
+            exit 0
+          fi
+          git commit -m "chore: update version.json for ${VERSION}"
+          # `github.event.repository` is unset on this workflow's `schedule`
+          # trigger (the primary/unattended path -- see this file's own
+          # header), so `github.event.repository.default_branch` is always
+          # empty there and the `|| 'main'` fallback silently substitutes a
+          # HARDCODED guess instead of this repo's real default branch on
+          # every nightly run (only `workflow_dispatch` -- masking, per usual
+          # -- would ever read the real value). `github.ref_name` is a
+          # top-level context field, always populated regardless of trigger:
+          # for `schedule` GitHub always runs against the default branch, and
+          # the "Checkout dozenos-nightly-build (this repo)" step above has no
+          # `ref:` override, so it checks out exactly that ref -- pushing back
+          # to `github.ref_name` matches what was actually checked out, on
+          # every trigger, with no guess baked in.
+          git push origin "HEAD:${{ github.ref_name }}"

@@ -1,0 +1,15 @@
+{
+  "_seed_note": "Placeholder committed before this repo's first real nightly build. release/gen-version-json.sh (in dozenos/dozenos-rebrand) overwrites this file's schema fields on every successful nightly run in .github/workflows/nightly.yml -- see that workflow and dozenos-rebrand/DISTRIBUTION.md section 4. This '_seed_note' key is not part of the schema and disappears once a real run overwrites the file.",
+  "version": "0000.00.00-0000-rolling",
+  "iso": {
+    "name": "",
+    "sha256": "",
+    "url": null
+  },
+  "minisig": {
+    "name": "",
+    "url": null
+  },
+  "minisign_pubkey_file": "minisign.pub",
+  "published_at": null
+}

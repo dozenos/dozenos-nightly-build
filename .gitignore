@@ -1,0 +1,12 @@
+# Build artifacts should never land in this repo's working tree -- they are
+# uploaded as GitHub Release assets by .github/workflows/nightly.yml, not
+# committed. These patterns only guard against an accidental local/manual
+# `git add` while testing the workflow's scripts by hand.
+*.iso
+*.iso.minisig
+*.raw
+*.img
+
+# Common OS/editor noise.
+.DS_Store
+*.swp
