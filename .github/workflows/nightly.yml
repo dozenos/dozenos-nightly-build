@@ -238,6 +238,13 @@ jobs:
       VERSION: ${{ needs.set-version.outputs.version }}
       DEBIAN_MIRROR: http://deb.debian.org/debian/
       DEBIAN_SECURITY_MIRROR: http://deb.debian.org/debian-security
+      # The `secrets` context is NOT available in step-level `if:` conditions
+      # (GitHub rejects the whole workflow with "Unrecognized named-value:
+      # 'secrets'"). Mirror the two MOK secrets into job-level env here so the
+      # signed-vs-unsigned `if:` guards below can test `env.*` instead. Empty
+      # (not set) when the org secrets are absent -- exactly the unsigned case.
+      MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
+      MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
     steps:
       # Self-checkout: this repo (dozenos/dozenos-nightly-build). Needed for
       # the version.json commit-back step at the end, and to host
@@ -285,10 +292,7 @@ jobs:
       # configured -- identical to an unsigned-kernel build in that case.
       # See dozenos-rebrand/SB-SIGNING.md.
       - name: Inject MOK signing key+cert
-        if: ${{ secrets.MOK_SIGNING_KEY != '' && secrets.MOK_SIGNING_CERT != '' }}
-        env:
-          MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
-          MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
+        if: ${{ env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
         run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build
 
       # Ephemeral apt repo is built INSIDE this same container invocation,
@@ -336,7 +340,7 @@ jobs:
       # window the decoded private key sits in this job's own git worktree.
       # No-op when the inject step above did not run either.
       - name: Clean up injected MOK key
-        if: ${{ always() && secrets.MOK_SIGNING_KEY != '' && secrets.MOK_SIGNING_CERT != '' }}
+        if: ${{ always() && env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
         run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
 
       # build-dozenos-image copies live-image-amd64.hybrid.iso to exactly
