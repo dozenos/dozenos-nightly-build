@@ -340,10 +340,15 @@ jobs:
               else
                 echo "W: no .deb files found under /dozenos-debs -- unexpected for a full nightly rebuild; building with an empty --dozenos-mirror anyway rather than failing the whole nightly"
               fi
+              # --build-type is intentionally NOT passed: build-dozenos-image
+              # then falls back to data/defaults.toml's build_type =
+              # "development". DozenOS nightlies are rolling development builds,
+              # not tagged releases -- keep them typed as `development` (affects
+              # os-release PRETTY_NAME/VERSION, the apt release-train pin, and
+              # the version string; does not change whether the ISO builds).
               sudo --preserve-env ./build-dozenos-image \
                 --architecture amd64 \
                 --build-by "$BUILD_BY" \
-                --build-type release \
                 --debian-mirror "$DEBIAN_MIRROR" \
                 --debian-security-mirror "$DEBIAN_SECURITY_MIRROR" \
                 --version "$VERSION" \
