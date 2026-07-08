@@ -119,6 +119,21 @@ jobs:
   # every OOT module in one invocation when given no --packages filter --
   # see dozenos-rebrand/DEP-GRAPH.md and rebuild-dispatch.yml's own comment
   # for the same pattern).
+  #
+  # shim-signed is EXCLUDED (a second special-case alongside linux-kernel).
+  # Its debian/control Build-Depends pins `shim-unsigned (= <ver>+dozenos1)` --
+  # a Secure Boot shim that VyOS builds from a SEPARATE source repo
+  # (vyos/efi-boot-shim, Source: `shim`) which bakes in a vendor UEFI CA, then
+  # hosts the resulting shim-unsigned in its apt repo. DozenOS does NOT mirror
+  # or rebuild that chain: the DECISION (see dozenos-rebrand/SB-SIGNING.md) is
+  # that the ISO consumes Debian's own stock, Microsoft-signed `shim-signed`
+  # from the Debian archive instead of a DozenOS-CA shim. So the exact-
+  # versioned `shim-unsigned (= <ver>+dozenos1)` never exists here,
+  # `mk-build-deps` can never satisfy it, and the recipe would fail 100% of
+  # the time -- failing the strict `needs: build-packages` gate below and
+  # blocking an otherwise-complete nightly. The recipe dir stays in-tree for
+  # 1:1 upstream mirror parity; it is simply not built. (A future DozenOS-CA
+  # Secure Boot flavor must mirror efi-boot-shim + build shim-unsigned first.)
   # --------------------------------------------------------------------- #
   discover:
     runs-on: ubuntu-latest
@@ -139,7 +154,7 @@ jobs:
         run: |
           set -euo pipefail
           others=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
-            ! -name linux-kernel -printf '%f\n' | sort)
+            ! -name linux-kernel ! -name shim-signed -printf '%f\n' | sort)
           packages=$(printf '%s\nlinux-kernel\n' "$others" | jq -R . | jq -sc .)
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
           echo "I: full nightly package matrix: $packages"
