@@ -366,21 +366,72 @@ jobs:
           retention-days: 1
 
   # --------------------------------------------------------------------- #
-  # Job: build-iso -- assemble the ephemeral apt repo from every package
-  # just built, build the signed generic ISO with an EXPLICIT --version,
-  # sign it, generate version.json, publish the GitHub Release in THIS
-  # repo, and commit version.json to the default branch as the stable
-  # "latest" pointer (DISTRIBUTION.md §4).
+  # Job: discover-flavors -- enumerate DozenOS build flavors from
+  # dozenos-rebrand's flavors/<subdir>/<flavor>.toml tree. Flavors are
+  # rebrand-owned configuration (the dozenos-build mirror's own
+  # data/build-flavors/ is upstream transform output and is NOT used):
+  # dropping a new toml into rebrand adds a build-image matrix leg here
+  # with NO workflow change. Subdirectories let the SAME flavor basename
+  # exist twice with different contents -- planned example:
+  # flavors/upgrade/aws.toml, an upgrade ISO without cloud-init that
+  # still stamps flavor "aws" (the toml BASENAME is the flavor name
+  # burned into the image, which is exactly what `add system image`
+  # compares), so it upgrades systems installed from the
+  # flavors/release/aws.toml vmdk.
   # --------------------------------------------------------------------- #
-  build-iso:
-    needs: [check-changes, set-version, build-packages]
+  discover-flavors:
+    needs: check-changes
+    if: needs.check-changes.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - name: Checkout dozenos-rebrand
+        uses: actions/checkout@v7
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-rebrand
+
+      - name: Build flavor matrix from flavors/*/*.toml
+        id: m
+        run: |
+          set -euo pipefail
+          matrix=$(
+            cd dozenos-rebrand/flavors
+            for f in */*.toml; do
+              subdir="${f%%/*}"
+              flavor="$(basename "$f" .toml)"
+              printf '{"flavor":"%s","subdir":"%s"}\n' "$flavor" "$subdir"
+            done | jq -sc .
+          )
+          if [ "$matrix" = "[]" ] || [ -z "$matrix" ]; then
+            echo "::error::no flavor tomls found under dozenos-rebrand/flavors/*/" >&2
+            exit 1
+          fi
+          echo "I: flavor matrix: $matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  # --------------------------------------------------------------------- #
+  # Job: build-image -- one matrix leg per (flavor, subdir): assemble the
+  # ephemeral apt repo from every package just built, build that flavor
+  # with an EXPLICIT --version, and upload EXACTLY the files
+  # manifest.json lists as artifacts (= the flavor toml's image_format
+  # list; intermediates like the 4GB .raw behind a qcow2 are never
+  # listed) for the publish job below to sign and release.
+  # --------------------------------------------------------------------- #
+  build-image:
+    needs: [check-changes, set-version, build-packages, discover-flavors]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    permissions:
-      # contents: write needed for gh release create (via GITHUB_TOKEN,
-      # same-repo -- DISTRIBUTION.md §7) and for the version.json commit
-      # back to this repo's own default branch below.
-      contents: write
+    strategy:
+      # One broken flavor must not sink the others' nightly artifacts;
+      # publish runs on success() of this job as a whole though, so a
+      # failed leg still fails the run loudly (by design -- a nightly with
+      # a silently missing flavor would poison the change-gate baseline).
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.discover-flavors.outputs.matrix) }}
     env:
       VERSION: ${{ needs.set-version.outputs.version }}
       DEBIAN_MIRROR: http://deb.debian.org/debian/
@@ -393,14 +444,6 @@ jobs:
       MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
       MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
     steps:
-      # Self-checkout: this repo (dozenos/dozenos-nightly-build). Needed for
-      # the version.json commit-back step at the end, and to host
-      # minisign.pub (see ./minisign.pub, ../../README.md).
-      - name: Checkout dozenos-nightly-build (this repo)
-        uses: actions/checkout@v7
-        with:
-          path: nightly-build
-
       - name: Checkout dozenos-build
         uses: actions/checkout@v7
         with:
@@ -430,10 +473,15 @@ jobs:
           path: dozenos-debs
           merge-multiple: true
 
-      - name: Install minisign (for the sign step below)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y minisign
+      # Disk-format flavors (qcow2/vmdk/...) additionally materialize a
+      # disk_size-GB raw intermediate next to the chroot, the ISO and the
+      # converted image -- reclaim runner disk up front for every leg
+      # (the generic leg does not strictly need it, but uniform legs are
+      # simpler to reason about than per-flavor disk math).
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
 
       # No-op (does not run at all) when the org secrets are not
       # configured -- identical to an unsigned-kernel build in that case.
@@ -464,7 +512,7 @@ jobs:
       # --version is passed EXPLICITLY (see set-version job above)
       # -- build-dozenos-image's own default does not match DozenOS's
       # release scheme.
-      - name: Build signed DozenOS generic ISO
+      - name: Build signed DozenOS ${{ matrix.flavor }} image (${{ matrix.subdir }})
         run: |
           docker run --rm \
             --sysctl net.ipv6.conf.lo.disable_ipv6=0 --privileged \
@@ -476,6 +524,8 @@ jobs:
             -e DEBIAN_MIRROR="${{ env.DEBIAN_MIRROR }}" \
             -e DEBIAN_SECURITY_MIRROR="${{ env.DEBIAN_SECURITY_MIRROR }}" \
             -e VERSION="${{ env.VERSION }}" \
+            -e BUILD_FLAVOR="${{ matrix.flavor }}" \
+            -e DOZENOS_BUILD_FLAVORS_DIR="/dozenos-rebrand/flavors/${{ matrix.subdir }}" \
             ghcr.io/dozenos/dozenos-build:rolling \
             bash -c '
               set -euo pipefail
@@ -515,7 +565,7 @@ jobs:
                 --debian-security-mirror "$DEBIAN_SECURITY_MIRROR" \
                 --version "$VERSION" \
                 --dozenos-mirror "$DOZENOS_MIRROR" \
-                generic
+                "$BUILD_FLAVOR"
             '
 
       # Always runs (even if the build step above failed) to shrink the
@@ -535,42 +585,138 @@ jobs:
       - name: Reclaim ownership of build artifacts
         run: sudo chown -R "$(id -u):$(id -g)" dozenos-build/build
 
-      # build-dozenos-image copies live-image-amd64.hybrid.iso to exactly
-      # this name itself (verified: scripts/image-build/build-dozenos-image,
-      # the `iso_file = f"dozenos-{version}-{build_flavor}-{architecture}.iso"`
-      # line + the `shutil.copy(...)` that follows it) -- no renaming needed
-      # here.
-      - name: Locate built ISO
-        id: iso
+      # manifest.json's "artifacts" is EXACTLY the flavor toml's declared
+      # image_format list (build-dozenos-image filters everything else
+      # out, e.g. the .raw intermediate behind a qcow2) -- so uploading
+      # manifest-listed files implements "only formats the toml mentions
+      # get released" with zero per-flavor logic here. meta.json carries
+      # the flavor name to the publish job (used for version.json
+      # entries), avoiding brittle filename parsing there.
+      - name: Collect manifest-declared artifacts
         run: |
           set -euo pipefail
-          iso_path="dozenos-build/build/dozenos-${VERSION}-generic-amd64.iso"
-          if [ ! -f "$iso_path" ]; then
-            echo "::error::expected ISO not found at $iso_path" >&2
-            exit 1
-          fi
-          echo "path=$iso_path" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename -- "$iso_path")" >> "$GITHUB_OUTPUT"
+          python3 - "${{ matrix.flavor }}" "${{ matrix.subdir }}" <<'PYEOF'
+          import json, shutil, sys, os
+          flavor, subdir = sys.argv[1], sys.argv[2]
+          m = json.load(open('dozenos-build/build/manifest.json'))
+          arts = m.get('artifacts') or []
+          if not arts:
+              print('::error::manifest.json lists no artifacts', file=sys.stderr)
+              sys.exit(1)
+          os.makedirs('image-out', exist_ok=True)
+          for a in arts:
+              src = os.path.join('dozenos-build/build', a)
+              if not os.path.isfile(src):
+                  print(f'::error::manifest artifact missing on disk: {src}', file=sys.stderr)
+                  sys.exit(1)
+              shutil.copy(src, 'image-out/')
+              print(f'I: collected {a}')
+          with open('image-out/meta.json', 'w') as f:
+              json.dump({'flavor': flavor, 'subdir': subdir, 'artifacts': arts}, f)
+          PYEOF
 
-      - name: Generate version.json
+      - name: Upload image artifacts for the publish job
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-${{ matrix.subdir }}-${{ matrix.flavor }}
+          path: image-out/
+          retention-days: 3
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------- #
+  # Job: publish -- gather every flavor's artifacts, minisign each file,
+  # generate the multi-artifact version.json, publish ONE GitHub Release
+  # with everything, and commit version.json + mirror-state.json back to
+  # the default branch as the stable "latest" pointer / change-gate
+  # baseline (DISTRIBUTION.md §4). A single job by design: exactly one
+  # `gh release create` may happen per tag (matrix legs racing to create
+  # the same release would conflict), and the change-gate baseline must
+  # only advance when EVERY flavor built (a skipped/failed leg skips this
+  # job, so the next tick rebuilds).
+  # --------------------------------------------------------------------- #
+  publish:
+    needs: [check-changes, set-version, build-image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      # contents: write needed for gh release create (via GITHUB_TOKEN,
+      # same-repo -- DISTRIBUTION.md §7) and for the version.json commit
+      # back to this repo's own default branch below.
+      contents: write
+    env:
+      VERSION: ${{ needs.set-version.outputs.version }}
+    steps:
+      # Self-checkout: this repo (dozenos/dozenos-nightly-build). Needed for
+      # the version.json commit-back step at the end, and to host
+      # minisign.pub (see ./minisign.pub, ../../README.md).
+      - name: Checkout dozenos-nightly-build (this repo)
+        uses: actions/checkout@v7
+        with:
+          path: nightly-build
+
+      - name: Checkout dozenos-rebrand
+        uses: actions/checkout@v7
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ secrets.BUILD_PAT }}
+          path: dozenos-rebrand
+
+      # NO merge-multiple here (unlike the deb download in build-image):
+      # each flavor leg's files land in their own images/image-<subdir>-
+      # <flavor>/ directory next to that leg's meta.json. Two subdirs may
+      # legitimately ship the SAME flavor name (the aws install/upgrade
+      # split), and a merged flat directory would let same-named files
+      # silently overwrite each other; per-leg directories turn any
+      # cross-leg filename collision into a loud release-upload error
+      # instead.
+      - name: Download all image artifacts from this run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: 'image-*'
+          path: images
+
+      - name: Install minisign
         run: |
-          dozenos-rebrand/release/gen-version-json.sh \
-            --version "$VERSION" \
-            --iso-path "${{ steps.iso.outputs.path }}" \
-            --release-url "https://github.com/dozenos/dozenos-nightly-build/releases/download/${VERSION}" \
-            --out nightly-build/version.json
+          sudo apt-get update
+          sudo apt-get install -y minisign
 
-      # Signs the ISO (minisign) and publishes the GitHub Release in THIS
-      # repo. GITHUB_TOKEN (not BUILD_PAT) is sufficient -- same-repo
-      # publish, see dozenos-rebrand/DISTRIBUTION.md §7.
-      - name: Sign ISO and publish GitHub Release
+      # Signs every artifact (minisign) and publishes the GitHub Release
+      # in THIS repo. GITHUB_TOKEN (not BUILD_PAT) is sufficient --
+      # same-repo publish, see dozenos-rebrand/DISTRIBUTION.md §7.
+      - name: Generate version.json, sign all artifacts, publish Release
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
           MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+          shopt -s nullglob
+          gen_args=()
+          pub_args=()
+          for meta in images/*/meta.json; do
+            dir=$(dirname "$meta")
+            flavor=$(jq -r .flavor "$meta")
+            while IFS= read -r name; do
+              path="$dir/$name"
+              if [ ! -f "$path" ]; then
+                echo "::error::artifact '$name' from $meta missing on disk" >&2
+                exit 1
+              fi
+              gen_args+=(--artifact "$flavor:$path")
+              pub_args+=(--asset "$path")
+            done < <(jq -r '.artifacts[]' "$meta")
+          done
+          if [ "${#pub_args[@]}" -eq 0 ]; then
+            echo "::error::no image artifacts found under images/ -- nothing to publish" >&2
+            exit 1
+          fi
+          dozenos-rebrand/release/gen-version-json.sh \
+            --version "$VERSION" \
+            "${gen_args[@]}" \
+            --release-url "https://github.com/dozenos/dozenos-nightly-build/releases/download/${VERSION}" \
+            --out nightly-build/version.json
           dozenos-rebrand/release/sign-and-publish.sh \
-            --iso "${{ steps.iso.outputs.path }}" \
+            "${pub_args[@]}" \
             --version-json nightly-build/version.json \
             --tag "$VERSION" \
             --repo dozenos/dozenos-nightly-build \
