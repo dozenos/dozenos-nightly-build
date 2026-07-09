@@ -258,10 +258,15 @@ jobs:
     steps:
       - name: Compute nightly version string
         id: v
+        env:
+          # Via env, never ${{ }}-interpolated into the script body: a
+          # dispatch input is typed by whoever dispatched and must not be
+          # able to inject shell here.
+          VERSION_OVERRIDE: ${{ inputs.version_override }}
         run: |
           set -euo pipefail
-          if [ -n "${{ inputs.version_override }}" ]; then
-            VERSION="${{ inputs.version_override }}"
+          if [ -n "$VERSION_OVERRIDE" ]; then
+            VERSION="$VERSION_OVERRIDE"
             echo "I: using dispatch override version: $VERSION"
           else
             # MUST be passed explicitly to build-dozenos-image's --version --
@@ -449,12 +454,6 @@ jobs:
             echo "hit=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Free disk space (large recipes only)
-        if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.pkg) && steps.probe.outputs.hit != 'true'
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: false
-
       - name: Build ${{ matrix.pkg }}
         if: steps.probe.outputs.hit != 'true'
         run: |
@@ -516,7 +515,11 @@ jobs:
         with:
           name: deb-${{ matrix.pkg }}
           path: dozenos-build/scripts/package-build/${{ matrix.pkg }}/*.deb
-          if-no-files-found: warn
+          # error (not warn, unlike rebuild-packages.yml's tolerant upload):
+          # this file's header promises a "coherent, guaranteed-complete
+          # .deb set" -- a leg that "succeeds" with zero .debs must fail
+          # the nightly loudly, not silently thin out the ISO's apt pool.
+          if-no-files-found: error
           # Consumed once, later in this SAME run, by the build-iso job
           # below -- never meant to outlive this workflow run (unlike
           # dozenos-build's own rebuild-packages.yml, whose deb-* artifacts
@@ -659,16 +662,6 @@ jobs:
           pattern: 'deb-*'
           path: dozenos-debs
           merge-multiple: true
-
-      # Disk-format flavors (qcow2/vmdk/...) additionally materialize a
-      # disk_size-GB raw intermediate next to the chroot, the ISO and the
-      # converted image -- reclaim runner disk up front for every leg
-      # (the generic leg does not strictly need it, but uniform legs are
-      # simpler to reason about than per-flavor disk math).
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: false
 
       # No-op (does not run at all) when the org secrets are not
       # configured -- identical to an unsigned-kernel build in that case.
