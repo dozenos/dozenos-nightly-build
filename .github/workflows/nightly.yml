@@ -535,7 +535,7 @@ jobs:
   # still stamps flavor "aws" (the toml BASENAME is the flavor name
   # burned into the image, which is exactly what `add system image`
   # compares), so it upgrades systems installed from the
-  # flavors/release/aws.toml vmdk.
+  # flavors/fresh-install/aws.toml vmdk.
   # --------------------------------------------------------------------- #
   discover-flavors:
     needs: check-changes
@@ -929,30 +929,50 @@ jobs:
           MIRROR_SHAS: ${{ needs.check-changes.outputs.shas }}
         run: |
           set -euo pipefail
-          # New change-gate baseline: what this build actually consumed.
-          printf '%s\n' "$MIRROR_SHAS" | jq -S . > mirror-state.json
           git config user.name "DozenOS autobuild"
           git config user.email "autobuild@dozenos.local"
-          git add version.json mirror-state.json
-          if git diff --cached --quiet; then
-            echo "I: version.json + mirror-state.json unchanged, nothing to commit"
-            exit 0
-          fi
-          git commit -m "chore: update version.json + mirror-state.json for ${VERSION}"
-          # `github.event.repository` is unset on this workflow's `schedule`
-          # trigger (the primary/unattended path -- see this file's own
-          # header), so `github.event.repository.default_branch` is always
-          # empty there and the `|| 'main'` fallback silently substitutes a
-          # HARDCODED guess instead of this repo's real default branch on
-          # every nightly run (only `workflow_dispatch` -- masking, per usual
-          # -- would ever read the real value). `github.ref_name` is a
-          # top-level context field, always populated regardless of trigger:
-          # for `schedule` GitHub always runs against the default branch, and
-          # the "Checkout dozenos-nightly-build (this repo)" step above has no
-          # `ref:` override, so it checks out exactly that ref -- pushing back
-          # to `github.ref_name` matches what was actually checked out, on
-          # every trigger, with no guess baked in.
-          git push origin "HEAD:${{ github.ref_name }}"
+          # version.json was generated into this checkout by the publish
+          # step above -- stash a copy outside the worktree so the
+          # reset-to-remote below cannot lose it.
+          cp version.json "$RUNNER_TEMP/version.json"
+          # Retry loop against a MOVED REMOTE: this job's checkout is from
+          # run start, but the branch legitimately moves during a run
+          # (workflow edits land mid-build; run 29010033346's commit-back
+          # was remote-rejected exactly this way). Both files are
+          # whole-file regenerated from this run's own data -- nothing is
+          # merged -- so the correct strategy is: sync to the CURRENT
+          # remote tip, re-write both files on top, push; on a lost race,
+          # re-sync and try again.
+          #
+          # (Why `github.ref_name`, not `github.event.repository.default_branch
+          # || 'main'`: the event payload's `repository` object is unset on
+          # `schedule` -- this workflow's unattended path -- so that
+          # expression silently degrades to a hardcoded guess. `ref_name` is
+          # a top-level context field, always populated, and matches what
+          # the no-`ref:` checkout above actually checked out.)
+          for attempt in 1 2 3; do
+            git fetch origin "${{ github.ref_name }}"
+            git reset --hard "origin/${{ github.ref_name }}"
+            cp "$RUNNER_TEMP/version.json" version.json
+            # New change-gate baseline: what this build actually consumed
+            # (check-changes' snapshot -- NOT a fresh re-read; a mirror that
+            # synced mid-build must stay unrecorded so the next tick
+            # rebuilds for it, see check-changes' own comment).
+            printf '%s\n' "$MIRROR_SHAS" | jq -S . > mirror-state.json
+            git add version.json mirror-state.json
+            if git diff --cached --quiet; then
+              echo "I: version.json + mirror-state.json unchanged, nothing to commit"
+              exit 0
+            fi
+            git commit -m "chore: update version.json + mirror-state.json for ${VERSION}"
+            if git push origin "HEAD:${{ github.ref_name }}"; then
+              echo "I: commit-back pushed (attempt $attempt)"
+              exit 0
+            fi
+            echo "W: push rejected (remote moved during run?) -- re-syncing and retrying ($attempt/3)"
+          done
+          echo "::error::commit-back failed after 3 attempts -- version.json/mirror-state.json on ${{ github.ref_name }} are stale (the Release itself already published fine); commit them manually or re-run this job" >&2
+          exit 1
 
   # --------------------------------------------------------------------- #
   # Job: prune-deb-cache -- cache hygiene (dozenos-rebrand/DEB-CACHE.md).
