@@ -87,7 +87,16 @@ on:
   # dozenos/* mirror change would ever signal. Cost stays low: heartbeat
   # builds hit the deb cache on every unchanged unit.
   repository_dispatch:
-    types: [dozenos-incremental-rebuild-complete]
+    # dozenos-image-build-requested is the current event name (renamed
+    # 2026-07-09: the old name said "rebuild-complete" but dozenos-build's
+    # own self-sync sends it directly with no rebuild involved -- the event
+    # REQUESTS an image build, so name it that). The old name stays
+    # accepted until every mirror's regenerated sync.yml (daily self-sync)
+    # and the dozenos-build overlay workflows have rolled over -- senders
+    # propagate on their own schedule, and a dropped event here would mean
+    # a silently missed image build. Drop the old type after confirming no
+    # sender remains (grep the mirrors' sync.yml + rebuild-dispatch.yml).
+    types: [dozenos-image-build-requested, dozenos-incremental-rebuild-complete]
   schedule:
     # 04:17 UTC every MONDAY (was daily) -- the weekly forced heartbeat.
     # Still ~1h after the shared mirror self-sync cron ('17 3 * * *') and
