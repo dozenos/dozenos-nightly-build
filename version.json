@@ -1,49 +1,49 @@
 {
-  "version": "2026.07.09-1116-rolling",
+  "version": "2026.07.09-1301-rolling",
   "iso": {
-    "name": "dozenos-2026.07.09-1116-rolling-generic-amd64.iso",
-    "sha256": "27c781238db890224c3733ebe6c94d00ab9feaf2cc67956af59acd042c816368",
-    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1116-rolling/dozenos-2026.07.09-1116-rolling-generic-amd64.iso"
+    "name": "dozenos-2026.07.09-1301-rolling-generic-amd64.iso",
+    "sha256": "8792b39a540eb3d51d345768bf28cb4e3e56ed561b874e27411d739bfd8b8446",
+    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1301-rolling/dozenos-2026.07.09-1301-rolling-generic-amd64.iso"
   },
   "minisig": {
-    "name": "dozenos-2026.07.09-1116-rolling-generic-amd64.iso.minisig",
-    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1116-rolling/dozenos-2026.07.09-1116-rolling-generic-amd64.iso.minisig"
+    "name": "dozenos-2026.07.09-1301-rolling-generic-amd64.iso.minisig",
+    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1301-rolling/dozenos-2026.07.09-1301-rolling-generic-amd64.iso.minisig"
   },
   "artifacts": [
     {
       "flavor": "generic",
       "format": "iso",
-      "name": "dozenos-2026.07.09-1116-rolling-generic-amd64.iso",
-      "sha256": "27c781238db890224c3733ebe6c94d00ab9feaf2cc67956af59acd042c816368",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1116-rolling/dozenos-2026.07.09-1116-rolling-generic-amd64.iso",
+      "name": "dozenos-2026.07.09-1301-rolling-generic-amd64.iso",
+      "sha256": "8792b39a540eb3d51d345768bf28cb4e3e56ed561b874e27411d739bfd8b8446",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1301-rolling/dozenos-2026.07.09-1301-rolling-generic-amd64.iso",
       "minisig": {
-        "name": "dozenos-2026.07.09-1116-rolling-generic-amd64.iso.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1116-rolling/dozenos-2026.07.09-1116-rolling-generic-amd64.iso.minisig"
+        "name": "dozenos-2026.07.09-1301-rolling-generic-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1301-rolling/dozenos-2026.07.09-1301-rolling-generic-amd64.iso.minisig"
       }
     },
     {
       "flavor": "kvm",
       "format": "iso",
-      "name": "dozenos-2026.07.09-1116-rolling-kvm-amd64.iso",
-      "sha256": "6c95bcb6e938318573480b37bb6b578fd778d85c940f7885799e0b55d40cdf46",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1116-rolling/dozenos-2026.07.09-1116-rolling-kvm-amd64.iso",
+      "name": "dozenos-2026.07.09-1301-rolling-kvm-amd64.iso",
+      "sha256": "6e800ca4188fad23208181e2d1910f1cd7919a31017b6d68aacd16290940a56e",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1301-rolling/dozenos-2026.07.09-1301-rolling-kvm-amd64.iso",
       "minisig": {
-        "name": "dozenos-2026.07.09-1116-rolling-kvm-amd64.iso.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1116-rolling/dozenos-2026.07.09-1116-rolling-kvm-amd64.iso.minisig"
+        "name": "dozenos-2026.07.09-1301-rolling-kvm-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1301-rolling/dozenos-2026.07.09-1301-rolling-kvm-amd64.iso.minisig"
       }
     },
     {
       "flavor": "kvm",
       "format": "qcow2",
-      "name": "dozenos-2026.07.09-1116-rolling-kvm-amd64.qcow2",
-      "sha256": "6371798a109278e286c9600a9b7a68984bfe2ac36dc46b07a6492ed1d6bce9f0",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1116-rolling/dozenos-2026.07.09-1116-rolling-kvm-amd64.qcow2",
+      "name": "dozenos-2026.07.09-1301-rolling-kvm-amd64.qcow2",
+      "sha256": "d506bf7cc2df3fde30a1f4c0f9fd0d01149d00287cd634aae92abdce33e4e56d",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1301-rolling/dozenos-2026.07.09-1301-rolling-kvm-amd64.qcow2",
       "minisig": {
-        "name": "dozenos-2026.07.09-1116-rolling-kvm-amd64.qcow2.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1116-rolling/dozenos-2026.07.09-1116-rolling-kvm-amd64.qcow2.minisig"
+        "name": "dozenos-2026.07.09-1301-rolling-kvm-amd64.qcow2.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.07.09-1301-rolling/dozenos-2026.07.09-1301-rolling-kvm-amd64.qcow2.minisig"
       }
     }
   ],
   "minisign_pubkey_file": "minisign.pub",
-  "published_at": "2026-07-09T11:42:01Z"
+  "published_at": "2026-07-09T13:32:33Z"
 }
