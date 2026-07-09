@@ -23,6 +23,16 @@
 # whichever packages happened to change recently -- see ISO-BUILD.md §5's
 # explicit note that item #17 should do a full rebuild instead.
 #
+# deb-cache acceleration (2026-07-09, user-approved -- see
+# dozenos-rebrand/DEB-CACHE.md): each build-packages leg now first probes
+# dozenos/dozenos-deb-cache by a content-derived input key and downloads the
+# unit's stored .deb set on a hit instead of rebuilding it. This does NOT
+# reintroduce option (b)'s incompleteness: the matrix still enumerates EVERY
+# package every night, and each leg either hits (full unit set, key-verified)
+# or rebuilds in-run -- the released .deb set stays coherent and complete by
+# construction, while unchanged packages stop costing wall-clock. Any cache
+# failure degrades to the pre-cache full rebuild, never to a wrong ISO.
+#
 # Helpers reused, not duplicated (see dozenos-rebrand/DISTRIBUTION.md,
 # ISO-BUILD.md, SB-SIGNING.md for the specs of each):
 #   dozenos-rebrand/release/make-ephemeral-apt-repo.sh -- ephemeral apt repo
@@ -364,13 +374,66 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
+      # ----------------------------------------------------------------- #
+      # deb-cache (dozenos-rebrand/DEB-CACHE.md): a package build's output
+      # is a pure function of its inputs, so derive a content key (recipe
+      # tree hash + branch-tracking scm SHAs + dep-closure mirror HEADs +
+      # global inputs) and reuse the .deb set stored under it by ANY
+      # earlier run -- unchanged packages skip their multi-minute (kernel:
+      # multi-hour) rebuild entirely. Every failure mode degrades to
+      # exactly today's behavior (full rebuild), never to a wrong ISO:
+      # key-computation failure => build without cache; probe failure or
+      # cache repo missing => MISS => build; store failure =>
+      # continue-on-error. The nightly's "coherent, guaranteed-complete
+      # .deb set" requirement (this file's header) still holds by
+      # construction: every matrix leg either HITs (downloads the full
+      # unit set) or rebuilds it in-run -- nothing is ever scanned from
+      # unrelated past CI history.
+      # ----------------------------------------------------------------- #
+      - name: Compute deb-cache key
+        id: cachekey
+        run: |
+          set -euo pipefail
+          if KEY=$(dozenos-rebrand/release/deb-cache.sh key \
+                --unit "${{ matrix.pkg }}" \
+                --build dozenos-build \
+                --rebrand dozenos-rebrand \
+                --manifest "$RUNNER_TEMP/deb-cache-manifest.json"); then
+            echo "I: deb-cache key for ${{ matrix.pkg }}: $KEY"
+            echo "key=$KEY" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::deb-cache key computation failed for ${{ matrix.pkg }} -- building without cache (fail-safe)"
+            echo "key=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # GITHUB_TOKEN suffices for the probe: the cache repo is public and
+      # download is a read. A miss (including "cache repo does not exist
+      # yet") is never an error -- it only costs the rebuild we would have
+      # done anyway.
+      - name: Probe deb cache
+        id: probe
+        if: steps.cachekey.outputs.key != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if dozenos-rebrand/release/deb-cache.sh probe \
+              --unit "${{ matrix.pkg }}" \
+              --key "${{ steps.cachekey.outputs.key }}" \
+              --dest "dozenos-build/scripts/package-build/${{ matrix.pkg }}"; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Free disk space (large recipes only)
-        if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.pkg)
+        if: contains(fromJson('["vpp", "linux-kernel"]'), matrix.pkg) && steps.probe.outputs.hit != 'true'
         uses: jlumbroso/free-disk-space@v1.3.1
         with:
           tool-cache: false
 
       - name: Build ${{ matrix.pkg }}
+        if: steps.probe.outputs.hit != 'true'
         run: |
           set -euo pipefail
           if [ "${{ matrix.pkg }}" = "linux-kernel" ]; then
@@ -392,6 +455,39 @@ jobs:
               bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
           fi
 
+      # Minted AFTER the (possibly multi-hour) build step on purpose: an
+      # App token lives ~1h, so a pre-build mint would be expired by the
+      # time the kernel leg gets here (same pattern as build-image's own
+      # token-lifetime comment). continue-on-error on both steps: a cache
+      # write failure must never fail the nightly -- it only means the
+      # next run rebuilds this unit again.
+      - name: Mint GitHub App token (deb-cache store)
+        id: cache_token
+        if: steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-deb-cache
+
+      - name: Store built debs into deb cache
+        if: steps.cache_token.outcome == 'success' && steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.cache_token.outputs.token }}
+        run: |
+          set -euo pipefail
+          dozenos-rebrand/release/deb-cache.sh store \
+            --unit "${{ matrix.pkg }}" \
+            --key "${{ steps.cachekey.outputs.key }}" \
+            --debs "dozenos-build/scripts/package-build/${{ matrix.pkg }}" \
+            --manifest "$RUNNER_TEMP/deb-cache-manifest.json"
+
+      # Uploads identically on both paths: a probe HIT lands the cached
+      # .debs in the same recipe dir a fresh build writes to, so build-iso
+      # consumes one uniform deb-* artifact contract either way.
       - name: Upload built package(s)
         uses: actions/upload-artifact@v7
         with:
@@ -834,3 +930,42 @@ jobs:
           # to `github.ref_name` matches what was actually checked out, on
           # every trigger, with no guess baked in.
           git push origin "HEAD:${{ github.ref_name }}"
+
+  # --------------------------------------------------------------------- #
+  # Job: prune-deb-cache -- cache hygiene (dozenos-rebrand/DEB-CACHE.md).
+  # Keeps the newest 3 entries per build unit on dozenos/dozenos-deb-cache
+  # and deletes the rest (tags included). Runs only after a successful
+  # publish: pruning is pure hygiene and must never be able to fail (or
+  # race) a nightly -- hence also continue-on-error on every step. Keeping
+  # 3 (not 1) covers a mid-day rebuild-dispatch store plus the change-gate
+  # baseline entry still referenced by a possible next-tick re-run.
+  # --------------------------------------------------------------------- #
+  prune-deb-cache:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mint GitHub App token (deb-cache prune)
+        id: cache_token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-rebrand,dozenos-deb-cache
+
+      - name: Checkout dozenos-rebrand
+        if: steps.cache_token.outcome == 'success'
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ steps.cache_token.outputs.token }}
+          path: dozenos-rebrand
+
+      - name: Prune deb cache (keep newest 3 per unit)
+        if: steps.cache_token.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.cache_token.outputs.token }}
+        run: dozenos-rebrand/release/deb-cache.sh prune --keep 3
