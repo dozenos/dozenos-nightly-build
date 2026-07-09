@@ -32,16 +32,25 @@
 #
 # Secrets/vars consumed (see ../../../dozenos-rebrand/CI-SECRETS.md,
 # authoritative for names):
-#   secrets.BUILD_PAT            cross-repo checkout of dozenos-build +
-#                                 dozenos-rebrand (this repo is not either of
-#                                 those repos, so every checkout of them here
-#                                 is cross-repo)
+#   vars.BUILD_APP_ID            )  org GitHub App (replaced the retired
+#   secrets.BUILD_APP_PRIVATE_KEY )  BUILD_PAT -- see CI-SECRETS.md §4): every
+#                                 cross-repo step below mints a short-lived
+#                                 (~1h) installation token at the START of its
+#                                 own job via actions/create-github-app-token,
+#                                 scoped to exactly the repos that job touches.
+#                                 Cross-repo here = checkout of dozenos-build +
+#                                 dozenos-rebrand (this repo is neither) and
+#                                 the check-changes org-wide HEAD snapshot.
+#                                 Per-job minting is also what keeps the 1h
+#                                 token lifetime a non-issue: the multi-hour
+#                                 build jobs use their token only in their
+#                                 first minutes (checkouts), never after.
 #   secrets.MOK_SIGNING_KEY       )  guarded -- no-op (unsigned kernel,
 #   secrets.MOK_SIGNING_CERT      )  identical to today) when unset
 #   secrets.MINISIGN_SECRET_KEY   )  required for the sign+release step;
 #   secrets.MINISIGN_PASSWORD     )  sign-and-publish.sh fails loudly if unset
 #   secrets.GITHUB_TOKEN          same-repo Release publish + version.json
-#                                 commit -- NOT BUILD_PAT, see
+#                                 commit -- NOT an App token, see
 #                                 DISTRIBUTION.md §7 ("GITHUB_TOKEN suffices")
 #   vars.BUILD_BY                 build-identity string (non-secret)
 #
@@ -125,14 +134,24 @@ jobs:
       - name: Checkout dozenos-nightly-build (for the recorded baseline)
         uses: actions/checkout@v7
 
+      # Enumerating org repos + reading each mirror's rolling HEAD is a
+      # cross-repo read -- the job's own GITHUB_TOKEN only sees this repo.
+      # Mint an org-wide App token (no `repositories:` filter: this is the
+      # one step that genuinely needs to see EVERY installation repo, since
+      # the whole point is enumerating the mirror set without a hand-kept
+      # list; see dozenos-rebrand/CI-SECRETS.md §4).
+      - name: Mint GitHub App token (org-wide mirror snapshot)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+
       - name: Snapshot mirror HEADs and compare to last-built baseline
         id: gate
         env:
-          # Enumerating org repos + reading each mirror's rolling HEAD is a
-          # cross-repo read -- the job's own GITHUB_TOKEN only sees this repo,
-          # so use BUILD_PAT (the same PAT every other cross-repo step here
-          # already uses; see dozenos-rebrand/CI-SECRETS.md).
-          GH_TOKEN: ${{ secrets.BUILD_PAT }}
+          GH_TOKEN: ${{ steps.app_token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -254,12 +273,21 @@ jobs:
     outputs:
       packages: ${{ steps.set.outputs.packages }}
     steps:
+      - name: Mint GitHub App token (dozenos-build checkout)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-build
+
       - name: Checkout dozenos-build
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-build
           ref: rolling
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-build
 
       - name: List every C2 package (full nightly rebuild, not a diff)
@@ -306,12 +334,23 @@ jobs:
       matrix:
         pkg: ${{ fromJson(needs.discover.outputs.packages) }}
     steps:
+      # One token for both checkouts below -- both happen in this job's
+      # first minutes, well inside the token's ~1h lifetime.
+      - name: Mint GitHub App token (dozenos-build + dozenos-rebrand checkouts)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-build,dozenos-rebrand
+
       - name: Checkout dozenos-build
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-build
           ref: rolling
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-build
 
       # Required for every C2 recipe's `pre_build_hook =
@@ -322,7 +361,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
       - name: Free disk space (large recipes only)
@@ -386,11 +425,20 @@ jobs:
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
     steps:
+      - name: Mint GitHub App token (dozenos-rebrand checkout)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-rebrand
+
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
       - name: Build flavor matrix from flavors/*/*.toml
@@ -444,19 +492,34 @@ jobs:
       MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
       MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
     steps:
+      # One token for both checkouts below. This job then runs up to
+      # timeout-minutes: 90 -- longer than the token's ~1h lifetime -- but
+      # that is fine BY CONSTRUCTION: the token's last use is the second
+      # checkout, minutes in; nothing after (build, artifact upload) touches
+      # it. Do not add a late step that reuses this token -- mint a fresh
+      # one instead.
+      - name: Mint GitHub App token (dozenos-build + dozenos-rebrand checkouts)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-build,dozenos-rebrand
+
       - name: Checkout dozenos-build
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-build
           ref: rolling
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-build
 
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
       # Every deb-<pkg> artifact uploaded by build-packages above, from
@@ -654,11 +717,20 @@ jobs:
         with:
           path: nightly-build
 
+      - name: Mint GitHub App token (dozenos-rebrand checkout)
+        id: app_token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-rebrand
+
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
           repository: dozenos/dozenos-rebrand
-          token: ${{ secrets.BUILD_PAT }}
+          token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
       # NO merge-multiple here (unlike the deb download in build-image):
@@ -681,7 +753,7 @@ jobs:
           sudo apt-get install -y minisign
 
       # Signs every artifact (minisign) and publishes the GitHub Release
-      # in THIS repo. GITHUB_TOKEN (not BUILD_PAT) is sufficient --
+      # in THIS repo. GITHUB_TOKEN (not an App token) is sufficient --
       # same-repo publish, see dozenos-rebrand/DISTRIBUTION.md §7.
       - name: Generate version.json, sign all artifacts, publish Release
         env:
