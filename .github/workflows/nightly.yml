@@ -566,6 +566,11 @@ jobs:
           set -euo pipefail
           matrix=$(
             cd dozenos-rebrand/flavors
+            # nullglob: with no matching toml the loop must not run once on
+            # the literal "*/*.toml" (emitting a garbage {"flavor":"*"}
+            # matrix entry that dodges the empty-matrix check below) -- it
+            # must produce nothing so that check fires.
+            shopt -s nullglob
             for f in */*.toml; do
               subdir="${f%%/*}"
               flavor="$(basename "$f" .toml)"
