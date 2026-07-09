@@ -152,7 +152,7 @@ jobs:
       # list; see dozenos-rebrand/CI-SECRETS.md §4).
       - name: Mint GitHub App token (org-wide mirror snapshot)
         id: app_token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
@@ -285,7 +285,7 @@ jobs:
     steps:
       - name: Mint GitHub App token (dozenos-build checkout)
         id: app_token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
@@ -348,7 +348,7 @@ jobs:
       # first minutes, well inside the token's ~1h lifetime.
       - name: Mint GitHub App token (dozenos-build + dozenos-rebrand checkouts)
         id: app_token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
@@ -465,7 +465,7 @@ jobs:
         id: cache_token
         if: steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
         continue-on-error: true
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
@@ -523,7 +523,7 @@ jobs:
     steps:
       - name: Mint GitHub App token (dozenos-rebrand checkout)
         id: app_token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
@@ -596,7 +596,7 @@ jobs:
       # one instead.
       - name: Mint GitHub App token (dozenos-build + dozenos-rebrand checkouts)
         id: app_token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
@@ -815,7 +815,7 @@ jobs:
 
       - name: Mint GitHub App token (dozenos-rebrand checkout)
         id: app_token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
@@ -947,7 +947,7 @@ jobs:
       - name: Mint GitHub App token (deb-cache prune)
         id: cache_token
         continue-on-error: true
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
