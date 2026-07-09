@@ -75,16 +75,24 @@
 name: DozenOS nightly build
 
 on:
+  # TRIGGER-BASED since 2026-07-09 (user decision, enabled by the deb-cache
+  # making an image build cost ~ISO-assembly-only when packages are warm):
+  # every incremental rebuild completion (rebuild-dispatch.yml's trigger-iso
+  # job has ALWAYS sent this event -- until now nothing listened) starts an
+  # image build, gated by check-changes below so identical mirror state
+  # never builds twice. The old daily cron becomes a WEEKLY heartbeat that
+  # FORCES a build even with zero mirror changes -- the ISO also bakes in
+  # packages from the Debian archive (deb.debian.org resolved at build
+  # time), so a periodic rebuild picks up Debian security updates that no
+  # dozenos/* mirror change would ever signal. Cost stays low: heartbeat
+  # builds hit the deb cache on every unchanged unit.
+  repository_dispatch:
+    types: [dozenos-incremental-rebuild-complete]
   schedule:
-    # 04:17 UTC daily -- deliberately ~1h AFTER the shared mirror self-sync
-    # cron ('17 3 * * *' in dozenos-rebrand/sync.yml.template). The sync jobs
-    # run in parallel and finish within minutes, so by 04:17 the day's syncs
-    # are quiescent; the check-changes gate below then snapshots every mirror's
-    # current HEAD and builds ONCE for whatever changed (a mirror that syncs
-    # later than this snapshot is simply picked up by the NEXT tick -- see
-    # check-changes' own comment). Off the top of the hour on purpose (avoids
-    # the well-known GitHub Actions scheduler pile-up at :00).
-    - cron: '17 4 * * *'
+    # 04:17 UTC every MONDAY (was daily) -- the weekly forced heartbeat.
+    # Still ~1h after the shared mirror self-sync cron ('17 3 * * *') and
+    # off the top of the hour (GitHub scheduler pile-up).
+    - cron: '17 4 * * 1'
   workflow_dispatch:
     inputs:
       version_override:
@@ -208,11 +216,17 @@ jobs:
           # silently swallowed).
           echo "shas=$current" >> "$GITHUB_OUTPUT"
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "I: workflow_dispatch -- forcing a build regardless of the gate."
+          # workflow_dispatch = "build now"; schedule = the weekly heartbeat
+          # that must build even with an unchanged fingerprint (Debian
+          # archive drift is invisible to the mirror-SHA gate -- see the
+          # `on:` comment). Only repository_dispatch (the per-change
+          # trigger) is gate-checked, deduping repeat dispatches for
+          # already-built state.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "I: ${{ github.event_name }} -- forcing a build regardless of the gate."
             echo "changed=true" >> "$GITHUB_OUTPUT"
           elif [ "$current" = "$baseline" ]; then
-            echo "I: no mirror changed since the last nightly ISO -- skipping this build."
+            echo "I: mirror fingerprint unchanged since the last published image -- skipping this build."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "I: mirror change detected since the last nightly ISO -- building. Diff (baseline vs current):"
