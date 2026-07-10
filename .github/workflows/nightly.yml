@@ -697,13 +697,17 @@ jobs:
           for meta in images/*/meta.json; do
             dir=$(dirname "$meta")
             flavor=$(jq -r .flavor "$meta")
+            subdir=$(jq -r .subdir "$meta")
             while IFS= read -r name; do
               path="$dir/$name"
               if [ ! -f "$path" ]; then
                 echo "::error::artifact '$name' from $meta missing on disk" >&2
                 exit 1
               fi
-              gen_args+=(--artifact "$flavor:$path")
+              # FLAVOR:SUBDIR:PATH -- the flavors/<subdir> becomes the
+              # artifact's install_type in version.json (fresh-install vs
+              # upgrade).
+              gen_args+=(--artifact "$flavor:$subdir:$path")
               pub_args+=(--asset "$path")
             done < <(jq -r '.artifacts[]' "$meta")
           done

@@ -70,6 +70,12 @@
   }
   a.dl:hover { text-decoration: underline; }
   .size { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+  .itype {
+    font-size: .72rem; font-weight: 600; letter-spacing: .03em;
+    color: var(--muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: .08rem .55rem;
+    text-transform: uppercase; white-space: nowrap;
+  }
   a.sig { color: var(--muted); font-size: .85rem; white-space: nowrap; }
   table.history { width: 100%; border-collapse: collapse; font-size: .95rem; }
   table.history th, table.history td { text-align: left; padding: .5rem .6rem; border-top: 1px solid var(--border); }
@@ -159,6 +165,10 @@
   var REPO = 'dozenos/dozenos-nightly-build';
   var API = 'https://api.github.com/repos/' + REPO + '/releases?per_page=15';
   var RELEASES_URL = 'https://github.com/' + REPO + '/releases';
+  // The default-branch version.json always describes the latest release; it
+  // carries per-artifact metadata (install_type) that the Releases API's
+  // asset list does not.
+  var VERSION_JSON = 'https://raw.githubusercontent.com/' + REPO + '/main/version.json';
 
   function fmtSize(bytes) {
     if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GiB';
@@ -206,19 +216,21 @@
     return { groups: groups, sigs: sigs };
   }
 
-  function assetList(assets, sigs) {
+  function assetList(assets, sigs, installTypes) {
     return el('ul', { 'class': 'assets' }, assets.map(function (a) {
       var kids = [
-        el('a', { 'class': 'dl', href: a.browser_download_url, text: a.name }),
-        el('span', { 'class': 'size', text: fmtSize(a.size) })
+        el('a', { 'class': 'dl', href: a.browser_download_url, text: a.name })
       ];
+      var itype = installTypes && installTypes[a.name];
+      if (itype) kids.push(el('span', { 'class': 'itype', text: itype.replace(/-/g, ' ') }));
+      kids.push(el('span', { 'class': 'size', text: fmtSize(a.size) }));
       var sig = sigs[a.name];
       if (sig) kids.push(el('a', { 'class': 'sig', href: sig.browser_download_url, text: 'signature (.minisig)' }));
       return el('li', null, kids);
     }));
   }
 
-  function renderLatest(release) {
+  function renderLatest(release, installTypes) {
     var box = document.getElementById('latest');
     box.textContent = '';
     box.appendChild(el('div', { 'class': 'latest-head' }, [
@@ -230,7 +242,7 @@
     Object.keys(grouped.groups).sort().forEach(function (flavor) {
       box.appendChild(el('div', { 'class': 'flavor' }, [
         el('h3', { text: flavor }),
-        assetList(grouped.groups[flavor], grouped.sigs)
+        assetList(grouped.groups[flavor], grouped.sigs, installTypes)
       ]));
     });
   }
@@ -275,15 +287,33 @@
     document.getElementById('history').textContent = '';
   }
 
-  fetch(API, { headers: { Accept: 'application/vnd.github+json' } })
+  var releasesReq = fetch(API, { headers: { Accept: 'application/vnd.github+json' } })
     .then(function (res) {
       if (!res.ok) throw new Error('GitHub API responded ' + res.status);
       return res.json();
-    })
-    .then(function (releases) {
-      releases = releases.filter(function (r) { return !r.draft && !r.prerelease; });
+    });
+
+  // Best-effort: labels are an enhancement, so any failure here just means
+  // no install-type chips.
+  var versionJsonReq = fetch(VERSION_JSON)
+    .then(function (res) { return res.ok ? res.json() : null; })
+    .catch(function () { return null; });
+
+  Promise.all([releasesReq, versionJsonReq])
+    .then(function (results) {
+      var releases = results[0].filter(function (r) { return !r.draft && !r.prerelease; });
       if (releases.length === 0) { fail('No published builds yet.'); return; }
-      renderLatest(releases[0]);
+      // Map asset name -> install_type, only when version.json actually
+      // describes the release we are rendering.
+      var installTypes = null;
+      var vj = results[1];
+      if (vj && vj.version === releases[0].tag_name && Array.isArray(vj.artifacts)) {
+        installTypes = {};
+        vj.artifacts.forEach(function (a) {
+          if (a && a.name && a.install_type) installTypes[a.name] = a.install_type;
+        });
+      }
+      renderLatest(releases[0], installTypes);
       renderHistory(releases.slice(1));
     })
     .catch(function (err) {
