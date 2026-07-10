@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DozenOS Nightly Builds</title>
+<meta name="description" content="Download DozenOS nightly ISO and virtual machine images. DozenOS is a downstream rebuild of the VyOS rolling release.">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --text: #1c2733;
+    --muted: #5b6b7b;
+    --border: #dde3ea;
+    --accent: #175ddc;
+    --accent-text: #ffffff;
+    --code-bg: #eef1f5;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161b;
+      --surface: #1a2027;
+      --text: #e4eaf1;
+      --muted: #93a3b4;
+      --border: #2b343f;
+      --accent: #5a93f5;
+      --accent-text: #0d1117;
+      --code-bg: #232b34;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  header.site { text-align: left; margin-bottom: 2rem; }
+  h1 { font-size: 2rem; margin: 0 0 .35rem; }
+  .tagline { color: var(--muted); margin: 0; }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1.75rem;
+  }
+  .latest-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .6rem; margin-bottom: 1rem; }
+  .latest-head h2 { margin: 0; font-size: 1.35rem; }
+  .badge {
+    font-size: .75rem; font-weight: 600; letter-spacing: .03em;
+    background: var(--accent); color: var(--accent-text);
+    border-radius: 999px; padding: .15rem .6rem; text-transform: uppercase;
+  }
+  .pubdate { color: var(--muted); font-size: .9rem; }
+  .flavor { margin-top: 1rem; }
+  .flavor h3 { margin: 0 0 .5rem; font-size: 1rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  ul.assets { list-style: none; margin: 0; padding: 0; }
+  ul.assets li {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;
+    padding: .55rem 0; border-top: 1px solid var(--border);
+  }
+  ul.assets li:first-child { border-top: 0; }
+  a.dl {
+    font-weight: 600; color: var(--accent); text-decoration: none;
+    word-break: break-all;
+  }
+  a.dl:hover { text-decoration: underline; }
+  .size { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+  a.sig { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+  table.history { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  table.history th, table.history td { text-align: left; padding: .5rem .6rem; border-top: 1px solid var(--border); }
+  table.history th { border-top: 0; color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  .table-wrap { overflow-x: auto; }
+  code, pre { background: var(--code-bg); border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { padding: .12rem .35rem; font-size: .88em; }
+  pre { padding: .9rem 1rem; overflow-x: auto; font-size: .85rem; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+  h2.section { font-size: 1.2rem; margin: 0 0 1rem; }
+  .status { color: var(--muted); }
+  .error { color: #c0392b; }
+  footer { color: var(--muted); font-size: .85rem; margin-top: 2.5rem; border-top: 1px solid var(--border); padding-top: 1.25rem; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header class="site">
+    <h1>DozenOS Nightly Builds</h1>
+    <p class="tagline">
+      Automated nightly images of <strong>DozenOS</strong> — a downstream
+      rebuild of the <a class="dl" href="https://vyos.io">VyOS</a> rolling
+      release, an open-source Debian-based network operating system.
+    </p>
+  </header>
+
+  <section class="card" id="latest">
+    <p class="status">Loading the latest build…</p>
+  </section>
+
+  <section class="card">
+    <h2 class="section">Verify your download</h2>
+    <p>
+      Every artifact is signed with
+      <a class="dl" href="https://jedisct1.github.io/minisign/">minisign</a>.
+      Download the matching <code>.minisig</code> file and verify with the
+      DozenOS public key:
+    </p>
+    <pre><code>minisign -Vm dozenos-&lt;version&gt;-&lt;flavor&gt;-amd64.iso \
+  -P RWRPPSRhVv7PW8vNKG1RM8ME1Tf7zQvtVBbfVjI3jcLmqJftyLjal7tq</code></pre>
+    <p>
+      The key is also published as
+      <a class="dl" href="https://github.com/dozenos/dozenos-nightly-build/blob/main/minisign.pub">minisign.pub</a>
+      in the release repository, and machine-readable build metadata for the
+      latest release is available as
+      <a class="dl" href="https://raw.githubusercontent.com/dozenos/dozenos-nightly-build/main/version.json">version.json</a>.
+    </p>
+    <p>
+      Default login: <code>dozenos</code> / <code>dozenos</code> — change the
+      password after first boot.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2 class="section">Previous builds</h2>
+    <div class="table-wrap" id="history">
+      <p class="status">Loading build history…</p>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Nightly builds are rolling development snapshots, rebuilt automatically
+      whenever any DozenOS source mirror changes (plus a weekly heartbeat to
+      pick up Debian security updates). They receive automated ISO smoke
+      testing but no manual QA — use them accordingly.
+    </p>
+    <p>
+      This page reads the
+      <a href="https://github.com/dozenos/dozenos-nightly-build/releases">GitHub
+      Releases of dozenos/dozenos-nightly-build</a> live, so it always shows
+      the current build with no manual updates.
+    </p>
+    <p>
+      DozenOS is an independent project and is not affiliated with or endorsed
+      by VyOS or Sentrium S.L. All source code originates from VyOS and remains
+      under the GNU GPL.
+    </p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var REPO = 'dozenos/dozenos-nightly-build';
+  var API = 'https://api.github.com/repos/' + REPO + '/releases?per_page=15';
+  var RELEASES_URL = 'https://github.com/' + REPO + '/releases';
+
+  function fmtSize(bytes) {
+    if (bytes >= 1024 * 1024 * 1024) return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GiB';
+    if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(0) + ' MiB';
+    return (bytes / 1024).toFixed(0) + ' KiB';
+  }
+
+  function fmtDate(iso) {
+    var d = new Date(iso);
+    return d.toLocaleString('en-GB', {
+      year: 'numeric', month: 'short', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short'
+    });
+  }
+
+  function el(tag, attrs, children) {
+    var e = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (k === 'text') e.textContent = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (c) { e.appendChild(c); });
+    return e;
+  }
+
+  // Group a release's downloadable assets by flavor. Asset names look like
+  // dozenos-<tag>-<flavor>-<arch>.<ext>; the flavor is the first token
+  // after the tag. Signature files attach to their subject asset.
+  function groupAssets(release) {
+    var prefix = 'dozenos-' + release.tag_name + '-';
+    var groups = {};
+    var sigs = {};
+    release.assets.forEach(function (a) {
+      if (/\.minisig$/.test(a.name)) {
+        sigs[a.name.replace(/\.minisig$/, '')] = a;
+        return;
+      }
+      if (a.name === 'version.json') return;
+      var flavor = 'other';
+      if (a.name.indexOf(prefix) === 0) {
+        flavor = a.name.slice(prefix.length).split('-')[0] || 'other';
+      }
+      (groups[flavor] = groups[flavor] || []).push(a);
+    });
+    return { groups: groups, sigs: sigs };
+  }
+
+  function assetList(assets, sigs) {
+    return el('ul', { 'class': 'assets' }, assets.map(function (a) {
+      var kids = [
+        el('a', { 'class': 'dl', href: a.browser_download_url, text: a.name }),
+        el('span', { 'class': 'size', text: fmtSize(a.size) })
+      ];
+      var sig = sigs[a.name];
+      if (sig) kids.push(el('a', { 'class': 'sig', href: sig.browser_download_url, text: 'signature (.minisig)' }));
+      return el('li', null, kids);
+    }));
+  }
+
+  function renderLatest(release) {
+    var box = document.getElementById('latest');
+    box.textContent = '';
+    box.appendChild(el('div', { 'class': 'latest-head' }, [
+      el('span', { 'class': 'badge', text: 'Latest' }),
+      el('h2', { text: 'DozenOS ' + release.tag_name }),
+      el('span', { 'class': 'pubdate', text: fmtDate(release.published_at) })
+    ]));
+    var grouped = groupAssets(release);
+    Object.keys(grouped.groups).sort().forEach(function (flavor) {
+      box.appendChild(el('div', { 'class': 'flavor' }, [
+        el('h3', { text: flavor }),
+        assetList(grouped.groups[flavor], grouped.sigs)
+      ]));
+    });
+  }
+
+  function renderHistory(releases) {
+    var box = document.getElementById('history');
+    box.textContent = '';
+    if (releases.length === 0) {
+      box.appendChild(el('p', { 'class': 'status', text: 'No previous builds.' }));
+      return;
+    }
+    var rows = releases.map(function (r) {
+      var isoCount = r.assets.filter(function (a) {
+        return !/\.minisig$/.test(a.name) && a.name !== 'version.json';
+      }).length;
+      return el('tr', null, [
+        el('td', null, [el('a', { 'class': 'dl', href: r.html_url, text: r.tag_name })]),
+        el('td', { text: fmtDate(r.published_at) }),
+        el('td', { text: isoCount + ' file' + (isoCount === 1 ? '' : 's') })
+      ]);
+    });
+    box.appendChild(el('table', { 'class': 'history' }, [
+      el('thead', null, [el('tr', null, [
+        el('th', { text: 'Version' }),
+        el('th', { text: 'Published' }),
+        el('th', { text: 'Artifacts' })
+      ])]),
+      el('tbody', null, rows)
+    ]));
+    box.appendChild(el('p', { 'class': 'status' }, [
+      el('a', { 'class': 'dl', href: RELEASES_URL, text: 'Full release history on GitHub →' })
+    ]));
+  }
+
+  function fail(message) {
+    var box = document.getElementById('latest');
+    box.textContent = '';
+    box.appendChild(el('p', { 'class': 'error', text: message }));
+    box.appendChild(el('p', null, [
+      el('a', { 'class': 'dl', href: RELEASES_URL, text: 'Browse all builds directly on GitHub Releases →' })
+    ]));
+    document.getElementById('history').textContent = '';
+  }
+
+  fetch(API, { headers: { Accept: 'application/vnd.github+json' } })
+    .then(function (res) {
+      if (!res.ok) throw new Error('GitHub API responded ' + res.status);
+      return res.json();
+    })
+    .then(function (releases) {
+      releases = releases.filter(function (r) { return !r.draft && !r.prerelease; });
+      if (releases.length === 0) { fail('No published builds yet.'); return; }
+      renderLatest(releases[0]);
+      renderHistory(releases.slice(1));
+    })
+    .catch(function (err) {
+      fail('Could not load release data (' + err.message + ').');
+    });
+})();
+</script>
+</body>
+</html>
