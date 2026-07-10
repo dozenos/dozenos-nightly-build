@@ -1,12 +1,17 @@
 # dozenos-nightly-build
 
-This repository **builds AND stores** nightly DozenOS ISOs. It deliberately
-diverges from upstream VyOS's own `vyos-nightly-build`, which is
+This repository **builds AND stores** nightly DozenOS images. It deliberately
+diverges from the upstream project's nightly-release repository, which is
 **store-only** (something else builds; that repo only holds the resulting
 releases). Here, [`.github/workflows/nightly.yml`](.github/workflows/nightly.yml)
-does both: every night it rebuilds every DozenOS package from source, builds
-a signed `generic` ISO from that fresh package set, and publishes the result
+does both: whenever any DozenOS source mirror changes (plus a weekly forced
+heartbeat), it rebuilds every DozenOS package from source, builds every
+configured image flavor from that fresh package set, and publishes the result
 as a GitHub Release in this same repo.
+
+**Downloads:** the easiest way to get an image is the
+[DozenOS nightly builds page](https://dozenos.github.io/dozenos-nightly-build/)
+(rendered from this repo's `docs/`, always showing the current release).
 
 See `dozenos-rebrand/DISTRIBUTION.md` (in the `dozenos/dozenos-rebrand` repo)
 for the full artifact-distribution model this workflow implements, and
@@ -18,8 +23,10 @@ ephemeral apt repo and Secure Boot signing mechanisms it reuses.
 | Path | Purpose |
 |---|---|
 | `.github/workflows/nightly.yml` | The nightly build+sign+publish workflow. |
+| `docs/` | The GitHub Pages download site (client-side render of this repo's Releases). |
 | `version.json` | Machine-readable pointer to the latest published nightly (kept up to date on the default branch by the workflow itself). |
-| `minisign.pub` | Public minisign key used to verify a downloaded ISO's `.minisig` signature. **Public material, not a secret** — see "Verifying a download" below. |
+| `mirror-state.json` | Change-gate baseline: the mirror SHAs the last published nightly was built from. |
+| `minisign.pub` | Public minisign key used to verify a downloaded artifact's `.minisig` signature. **Public material, not a secret** — see "Verifying a download" below. |
 
 This repo is deliberately thin: the actual build/sign/publish logic (the
 ephemeral apt repo builder, the MOK cert injector, the `version.json`
@@ -29,14 +36,11 @@ invoked by the workflow at CI time, not copied in here.
 
 ## Releases
 
-Each nightly Release is tagged `YYYY.MM.DD-HHMM-rolling` and carries four
-assets:
-
-| Asset | Purpose |
-|---|---|
-| `dozenos-<version>-generic-amd64.iso` | The installable image. |
-| `dozenos-<version>-generic-amd64.iso.minisig` | Detached minisign signature over the ISO. |
-| `version.json` | Frozen snapshot of that release's metadata (version, ISO name, sha256, URLs). |
+Each nightly Release is tagged `YYYY.MM.DD-HHMM-rolling` and carries one
+image file per flavor/format declared in the flavor tomls (currently the
+`generic` ISO, the `kvm` ISO and its `qcow2`), a detached `.minisig`
+signature next to every image, and a frozen `version.json` snapshot of that
+release's metadata (version, artifact names, sha256, URLs).
 
 `minisign.pub` (this repo's public verify key) is **not** a per-release
 asset — it's a single, stable file committed here once and reused across
@@ -44,35 +48,20 @@ every release.
 
 ## Verifying a download
 
-After downloading an ISO and its `.minisig` from a Release (or via the
+After downloading an image and its `.minisig` from a Release (or via the
 `version.json` "latest" pointer committed to this repo's default branch):
 
 1. Get the public verify key, `minisign.pub`, from this repo.
-2. Check the sha256 against `version.json`'s `iso.sha256`:
+2. Check the sha256 against the matching entry in `version.json`'s
+   `artifacts` list:
    ```sh
-   sha256sum dozenos-<version>-generic-amd64.iso
-   # compare to version.json's iso.sha256 field
+   sha256sum dozenos-<version>-<flavor>-amd64.iso
+   # compare to that entry's sha256 field in version.json
    ```
 3. Verify the minisign signature:
    ```sh
-   minisign -Vm dozenos-<version>-generic-amd64.iso -p minisign.pub
+   minisign -Vm dozenos-<version>-<flavor>-amd64.iso -p minisign.pub
    ```
    A non-zero exit means: do not install this image.
 
 Full spec: `dozenos-rebrand/DISTRIBUTION.md` §5 ("Consumer verify flow").
-
-## Status
-
-**Not yet live.** This repo is authored but not pushed to
-`github.com/dozenos/dozenos-nightly-build`, and the `schedule` trigger in
-`nightly.yml` does not fire until:
-
-- the repo is actually created and pushed (blocked on item #20 in the
-  DozenOS CI/CD plan),
-- the required org secrets (see `dozenos-rebrand/CI-SECRETS.md`) are
-  confirmed present and scoped to this repo, and
-- the pipeline has been reviewed end-to-end.
-
-`minisign.pub` in this checkout is currently a **placeholder** (see that
-file) — a maintainer must replace it with the real public key paired with
-the `MINISIGN_SECRET_KEY` org secret before the first real release.

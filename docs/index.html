@@ -81,6 +81,7 @@
   pre code { background: none; padding: 0; }
   h2.section { font-size: 1.2rem; margin: 0 0 1rem; }
   .status { color: var(--muted); }
+  .login-note { color: var(--muted); margin: -0.9rem 0 1.75rem; padding: 0 .25rem; }
   .error { color: #c0392b; }
   footer { color: var(--muted); font-size: .85rem; margin-top: 2.5rem; border-top: 1px solid var(--border); padding-top: 1.25rem; }
   footer a { color: var(--accent); }
@@ -100,6 +101,11 @@
     <p class="status">Loading the latest build…</p>
   </section>
 
+  <p class="login-note">
+    The default login is <code>dozenos</code> / <code>dozenos</code> — change
+    the password after first boot.
+  </p>
+
   <section class="card">
     <h2 class="section">Verify your download</h2>
     <p>
@@ -116,10 +122,6 @@
       in the release repository, and machine-readable build metadata for the
       latest release is available as
       <a class="dl" href="https://raw.githubusercontent.com/dozenos/dozenos-nightly-build/main/version.json">version.json</a>.
-    </p>
-    <p>
-      Default login: <code>dozenos</code> / <code>dozenos</code> — change the
-      password after first boot.
     </p>
   </section>
 
