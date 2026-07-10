@@ -1,105 +1,51 @@
-# DozenOS nightly BUILD + STORE workflow (item #17).
+# DozenOS nightly BUILD + STORE workflow. Unlike upstream's store-only
+# nightly repo, this builds every C2 package (plus the linux-kernel family)
+# in this run, feeds the resulting .debs into an ephemeral in-job apt repo,
+# builds every flavor, and publishes one GitHub Release in this same repo.
+# The full in-run rebuild (never a scan of past dozenos-build CI artifacts)
+# is what guarantees a coherent, complete .deb set -- see
+# dozenos-rebrand/ISO-BUILD.md §5 and DISTRIBUTION.md §2(b). The deb cache
+# (dozenos-rebrand/DEB-CACHE.md) keeps this cheap without weakening that
+# guarantee: every matrix leg either key-hits its full stored unit set or
+# rebuilds it in-run.
 #
-# This repo (dozenos/dozenos-nightly-build) deliberately DIVERGES from
-# upstream VyOS's own `vyos-nightly-build`, which is STORE-ONLY (a human/other
-# pipeline uploads assets to it). This workflow both BUILDS a full DozenOS
-# generic ISO from scratch every night AND STORES it as a GitHub Release in
-# this same repo -- see ../../../dozenos-rebrand/DISTRIBUTION.md §2(b) for the
-# durable-artifact-tier rationale and ../../../dozenos-rebrand/ISO-BUILD.md §5
-# ("what item #17 should do instead") for why a full in-run package rebuild,
-# not a best-effort scan of past dozenos-build CI history, is required here:
-# a nightly RELEASE needs a coherent, guaranteed-complete .deb set, not
-# whatever happened to be rebuilt recently in dozenos-build's own CI.
-#
-# Package-source strategy (DECIDED): build every C2 package (plus the
-# linux-kernel family) IN THIS RUN, matching dozenos-build's own
-# rebuild-packages.yml / rebuild-dispatch.yml build-step shape (container
-# ghcr.io/dozenos/dozenos-build:rolling, /dozenos + /dozenos-rebrand mounts),
-# then feed the resulting deb-* artifacts into the SAME ephemeral in-job apt
-# repo mechanism (release/make-ephemeral-apt-repo.sh, item #13) the
-# integration smoketest already uses. This is option (a) from the task specs,
-# chosen over option (b) (downloading dozenos-build's last successful
-# rebuild-packages.yml artifacts) precisely because (b) can only ever recover
-# whichever packages happened to change recently -- see ISO-BUILD.md §5's
-# explicit note that item #17 should do a full rebuild instead.
-#
-# deb-cache acceleration (2026-07-09, user-approved -- see
-# dozenos-rebrand/DEB-CACHE.md): each build-packages leg now first probes
-# dozenos/dozenos-deb-cache by a content-derived input key and downloads the
-# unit's stored .deb set on a hit instead of rebuilding it. This does NOT
-# reintroduce option (b)'s incompleteness: the matrix still enumerates EVERY
-# package every night, and each leg either hits (full unit set, key-verified)
-# or rebuilds in-run -- the released .deb set stays coherent and complete by
-# construction, while unchanged packages stop costing wall-clock. Any cache
-# failure degrades to the pre-cache full rebuild, never to a wrong ISO.
-#
-# Helpers reused, not duplicated (see dozenos-rebrand/DISTRIBUTION.md,
-# ISO-BUILD.md, SB-SIGNING.md for the specs of each):
+# Helper scripts (specs in dozenos-rebrand/DISTRIBUTION.md, ISO-BUILD.md,
+# SB-SIGNING.md):
 #   dozenos-rebrand/release/make-ephemeral-apt-repo.sh -- ephemeral apt repo
-#   dozenos-rebrand/release/inject-mok-cert.sh          -- MOK inject/shred
-#   dozenos-rebrand/release/gen-version-json.sh         -- version.json
-#   dozenos-rebrand/release/sign-and-publish.sh          -- minisign + gh release
+#   dozenos-rebrand/release/inject-mok-cert.sh         -- MOK inject/shred
+#   dozenos-rebrand/release/gen-version-json.sh        -- version.json
+#   dozenos-rebrand/release/sign-and-publish.sh        -- minisign + gh release
 #
-# Secrets/vars consumed (see ../../../dozenos-rebrand/CI-SECRETS.md,
-# authoritative for names):
-#   vars.BUILD_APP_ID            )  org GitHub App (replaced the retired
-#   secrets.BUILD_APP_PRIVATE_KEY )  BUILD_PAT -- see CI-SECRETS.md §4): every
-#                                 cross-repo step below mints a short-lived
-#                                 (~1h) installation token at the START of its
-#                                 own job via actions/create-github-app-token,
-#                                 scoped to exactly the repos that job touches.
-#                                 Cross-repo here = checkout of dozenos-build +
-#                                 dozenos-rebrand (this repo is neither) and
-#                                 the check-changes org-wide HEAD snapshot.
-#                                 Per-job minting is also what keeps the 1h
-#                                 token lifetime a non-issue: the multi-hour
-#                                 build jobs use their token only in their
-#                                 first minutes (checkouts), never after.
-#   secrets.MOK_SIGNING_KEY       )  guarded -- no-op (unsigned kernel,
-#   secrets.MOK_SIGNING_CERT      )  identical to today) when unset
-#   secrets.MINISIGN_SECRET_KEY   )  required for the sign+release step;
-#   secrets.MINISIGN_PASSWORD     )  sign-and-publish.sh fails loudly if unset
-#   secrets.GITHUB_TOKEN          same-repo Release publish + version.json
-#                                 commit -- NOT an App token, see
-#                                 DISTRIBUTION.md §7 ("GITHUB_TOKEN suffices")
-#   vars.BUILD_BY                 build-identity string (non-secret)
+# Secrets/vars (names authoritative in dozenos-rebrand/CI-SECRETS.md):
+#   vars.BUILD_APP_ID + secrets.BUILD_APP_PRIVATE_KEY -- org GitHub App;
+#     every cross-repo step mints a short-lived (~1h) installation token at
+#     the start of its own job, scoped to exactly the repos it touches.
+#   secrets.MOK_SIGNING_KEY / MOK_SIGNING_CERT -- optional; unsigned kernel
+#     when unset.
+#   secrets.MINISIGN_SECRET_KEY / MINISIGN_PASSWORD -- required by
+#     sign-and-publish.sh, which fails loudly if unset.
+#   secrets.GITHUB_TOKEN -- same-repo Release publish + version.json commit
+#     (DISTRIBUTION.md §7).
+#   vars.BUILD_BY -- build-identity string (non-secret).
 #
-# NO `uses: vyos/*` anywhere in this file (dozenos-rebrand/WORKFLOW-POLICY.md
-# hard rule) and zero literal "vyos" in any form.
-#
-# NOTE (deferred): this workflow is authored but NOT live -- the `schedule`
-# trigger below does not start firing until this repo is actually pushed to
-# github.com/dozenos/dozenos-nightly-build (blocked on item #20), the secrets
-# above are injected on this repo, and the pipeline has been reviewed. See
-# dozenos-rebrand/CI-SECRETS.md and DOZENOS-CICD-PLAN.md.
+# No `uses: vyos/*` anywhere in this file (dozenos-rebrand/WORKFLOW-POLICY.md
+# hard rule).
 name: DozenOS nightly build
 
 on:
-  # TRIGGER-BASED since 2026-07-09 (user decision, enabled by the deb-cache
-  # making an image build cost ~ISO-assembly-only when packages are warm):
-  # every incremental rebuild completion (rebuild-dispatch.yml's trigger-iso
-  # job has ALWAYS sent this event -- until now nothing listened) starts an
-  # image build, gated by check-changes below so identical mirror state
-  # never builds twice. The old daily cron becomes a WEEKLY heartbeat that
-  # FORCES a build even with zero mirror changes -- the ISO also bakes in
-  # packages from the Debian archive (deb.debian.org resolved at build
-  # time), so a periodic rebuild picks up Debian security updates that no
-  # dozenos/* mirror change would ever signal. Cost stays low: heartbeat
-  # builds hit the deb cache on every unchanged unit.
+  # Trigger-based: mirror self-syncs and incremental rebuilds send
+  # dozenos-image-build-requested; check-changes below dedupes so identical
+  # mirror state never builds twice. The weekly cron is a forced heartbeat:
+  # the ISO also bakes in packages from the Debian archive (resolved at
+  # build time), so a periodic rebuild picks up Debian security updates
+  # that no dozenos/* mirror change would ever signal.
   repository_dispatch:
-    # dozenos-image-build-requested is the current event name (renamed
-    # 2026-07-09: the old name said "rebuild-complete" but dozenos-build's
-    # own self-sync sends it directly with no rebuild involved -- the event
-    # REQUESTS an image build, so name it that). The old name stays
-    # accepted until every mirror's regenerated sync.yml (daily self-sync)
-    # and the dozenos-build overlay workflows have rolled over -- senders
-    # propagate on their own schedule, and a dropped event here would mean
-    # a silently missed image build. Drop the old type after confirming no
-    # sender remains (grep the mirrors' sync.yml + rebuild-dispatch.yml).
+    # dozenos-incremental-rebuild-complete is the legacy event name; drop it
+    # only after confirming no sender remains (grep the mirrors' sync.yml +
+    # rebuild-dispatch.yml).
     types: [dozenos-image-build-requested, dozenos-incremental-rebuild-complete]
   schedule:
-    # 04:17 UTC every MONDAY (was daily) -- the weekly forced heartbeat.
-    # Still ~1h after the shared mirror self-sync cron ('17 3 * * *') and
+    # Mondays, ~1h after the shared mirror self-sync cron ('17 3 * * *') and
     # off the top of the hour (GitHub scheduler pile-up).
     - cron: '17 4 * * 1'
   workflow_dispatch:
@@ -109,12 +55,9 @@ on:
         required: false
         type: string
 
-# Only one nightly build/publish in flight at a time -- a second scheduled or
-# manually-dispatched run overlapping the first would race on the same
-# default-branch version.json commit and could double-publish a Release tag
-# collision. Never cancel a build already in progress (cancel-in-progress:
-# false) -- a partially-built ISO is not something we want to silently
-# abandon; a second run instead queues behind the first.
+# One nightly in flight at a time: overlapping runs would race on the same
+# default-branch version.json commit and could collide on the Release tag.
+# Never cancel a build already in progress -- a second run queues instead.
 concurrency:
   group: dozenos-nightly-build
   cancel-in-progress: false
@@ -123,35 +66,14 @@ permissions:
   contents: read
 
 jobs:
-  # --------------------------------------------------------------------- #
-  # Job: check-changes -- the "build only when something actually changed"
-  # gate. A nightly ISO is a full from-scratch rebuild (~2-3h); running it
-  # every day when no mirror moved wastes that, and running it once per
-  # changed mirror (N full ISOs/day) is worse. This job snapshots the CURRENT
-  # rolling HEAD of every dozenos/* mirror -- INCLUDING dozenos-build (a change
-  # to its build tooling/flavors alters the ISO even with identical package
-  # sources) and dozenos-rebrand (its transform/overlay/flavor toolkit does
-  # too) -- and compares that whole set against the SHAs recorded when the LAST
-  # nightly ISO was built (mirror-state.json on this repo's default branch,
-  # written by build-iso below):
-  #
-  #   - identical set  -> changed=false -> set-version + discover (and thus
-  #     everything downstream) are skipped; the nightly ends in seconds having
-  #     built nothing.
-  #   - any difference -> changed=true  -> the normal full build runs, and
-  #     build-iso records THIS job's observed SHA set as the new baseline.
-  #
-  # Batching is automatic: whatever has synced by 04:17 UTC (the cron is offset
-  # after the shared sync cron -- see `on:` above) is captured in one snapshot,
-  # so the day's changes collapse into ONE build. A mirror that syncs AFTER
-  # this snapshot is not lost -- its HEAD will differ from the recorded
-  # baseline at the NEXT tick, so it is merely deferred one tick. Persisting
-  # the SNAPSHOT (not a fresh re-read at commit time) is what guarantees that:
-  # see build-iso's "Commit ... to default branch" step.
-  #
-  # `workflow_dispatch` always forces a build (a manual run means "build now",
-  # gate or no gate).
-  # --------------------------------------------------------------------- #
+  # check-changes: build only when a dozenos/* mirror actually moved.
+  # Snapshots every mirror's rolling HEAD -- including dozenos-build and
+  # dozenos-rebrand, whose tooling changes the ISO too -- and compares the
+  # set against mirror-state.json (this repo's default branch), the SHAs
+  # recorded when the last ISO was built. Whatever synced by the time a
+  # trigger lands is captured in one snapshot, so a day's changes collapse
+  # into one build; a mirror that syncs mid-build differs from the recorded
+  # baseline at the next tick. workflow_dispatch always forces a build.
   check-changes:
     runs-on: ubuntu-latest
     outputs:
@@ -161,12 +83,10 @@ jobs:
       - name: Checkout dozenos-nightly-build (for the recorded baseline)
         uses: actions/checkout@v7
 
-      # Enumerating org repos + reading each mirror's rolling HEAD is a
-      # cross-repo read -- the job's own GITHUB_TOKEN only sees this repo.
-      # Mint an org-wide App token (no `repositories:` filter: this is the
-      # one step that genuinely needs to see EVERY installation repo, since
-      # the whole point is enumerating the mirror set without a hand-kept
-      # list; see dozenos-rebrand/CI-SECRETS.md §4).
+      # Enumerating org repos + reading each mirror's HEAD is a cross-repo
+      # read. No `repositories:` filter: this step genuinely needs every
+      # installation repo, since the point is enumerating the mirror set
+      # without a hand-kept list (CI-SECRETS.md §4).
       - name: Mint GitHub App token (org-wide mirror snapshot)
         id: app_token
         uses: actions/create-github-app-token@v3
@@ -182,12 +102,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Every dozenos/* repo that HAS a `rolling` branch == exactly the
-          # mirror set (all package mirrors + dozenos-build); enumerating by
-          # branch auto-covers mirrors added/removed later with no hand-kept
-          # list here. dozenos-nightly-build (this repo) is skipped explicitly:
-          # it has no `rolling` branch anyway, but guarding also stops the
-          # version.json/mirror-state.json commits below from ever feeding back
+          # Every dozenos/* repo with a `rolling` branch == the mirror set;
+          # enumerating by branch auto-covers mirrors added/removed later.
+          # dozenos-nightly-build (this repo) is skipped explicitly so the
+          # version.json/mirror-state.json commits below can never feed back
           # into this fingerprint (which would self-trigger every tick).
           declare -A shas
           while read -r r; do
@@ -198,16 +116,15 @@ jobs:
             fi
           done < <(gh api --paginate orgs/dozenos/repos --jq '.[].name' | sort -u)
 
-          # dozenos-rebrand has no `rolling` branch (it is the toolkit repo, not
-          # a mirror) -- track its DEFAULT-branch HEAD instead. A change to its
-          # rename-transform rules / overlays / flavors changes the ISO as much
-          # as any package source change, so it must be in the fingerprint.
+          # dozenos-rebrand has no `rolling` branch (toolkit repo, not a
+          # mirror) -- track its default-branch HEAD instead; its transform/
+          # overlay/flavor changes alter the ISO as much as any package.
           if rsha=$(gh api "repos/dozenos/dozenos-rebrand/commits/HEAD" --jq '.sha' 2>/dev/null); then
             [ -n "$rsha" ] && shas["dozenos-rebrand"]="$rsha"
           fi
 
-          # Canonical (keys sorted) JSON object {"repo":"sha",...} so string
-          # equality against the stored baseline is stable.
+          # Canonical (keys sorted) JSON so string equality against the
+          # stored baseline is stable.
           current=$(for k in "${!shas[@]}"; do
               printf '%s\t%s\n' "$k" "${shas[$k]}"
             done | jq -R -s 'split("\n") | map(select(length>0) | split("\t"))
@@ -220,17 +137,15 @@ jobs:
           fi
 
           # Emit the OBSERVED set for build-iso to persist verbatim after a
-          # successful build (persisting this snapshot -- not a fresh re-read --
-          # is what makes a mid-build sync roll to the next tick rather than be
-          # silently swallowed).
+          # successful build; persisting this snapshot (not a fresh re-read)
+          # is what makes a mid-build sync roll to the next tick rather than
+          # be silently swallowed.
           echo "shas=$current" >> "$GITHUB_OUTPUT"
 
           # workflow_dispatch = "build now"; schedule = the weekly heartbeat
           # that must build even with an unchanged fingerprint (Debian
-          # archive drift is invisible to the mirror-SHA gate -- see the
-          # `on:` comment). Only repository_dispatch (the per-change
-          # trigger) is gate-checked, deduping repeat dispatches for
-          # already-built state.
+          # archive drift is invisible to the mirror-SHA gate). Only
+          # repository_dispatch is gate-checked.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             echo "I: ${{ github.event_name }} -- forcing a build regardless of the gate."
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -244,11 +159,8 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-  # --------------------------------------------------------------------- #
-  # Job: set-version -- compute the one VERSION string shared by every
-  # later job (package builds don't need it, but the ISO build, signing,
-  # version.json, and release tag all must agree on the exact same value).
-  # --------------------------------------------------------------------- #
+  # set-version: one VERSION string shared by every later job -- the ISO
+  # build, signing, version.json, and release tag must all agree.
   set-version:
     needs: check-changes
     if: needs.check-changes.outputs.changed == 'true'
@@ -269,41 +181,26 @@ jobs:
             VERSION="$VERSION_OVERRIDE"
             echo "I: using dispatch override version: $VERSION"
           else
-            # MUST be passed explicitly to build-dozenos-image's --version --
-            # its own default ("<rolling-version-from-data/versions>-rolling-
-            # <timestamp>", e.g. "1.5-rolling-202607080217") does NOT match
-            # DozenOS's release/tag scheme (DISTRIBUTION.md §3). Verified by
-            # reading the reproduced build-dozenos-image directly -- see this
-            # repo's authoring notes / dozenos-rebrand/ISO-BUILD.md.
+            # Passed explicitly to build-dozenos-image's --version: its own
+            # default does not match DozenOS's release/tag scheme
+            # (DISTRIBUTION.md §3).
             VERSION="$(date -u +%Y.%m.%d-%H%M)-rolling"
             echo "I: computed version: $VERSION"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-  # --------------------------------------------------------------------- #
-  # Job: discover -- full package list (NOT a diff/changed-only discovery
-  # like dozenos-build's own rebuild-packages.yml push trigger -- a nightly
-  # release needs every package, every night). linux-kernel is collapsed
-  # into one matrix entry (its own bespoke build.py builds the kernel plus
-  # every OOT module in one invocation when given no --packages filter --
-  # see dozenos-rebrand/DEP-GRAPH.md and rebuild-dispatch.yml's own comment
-  # for the same pattern).
+  # discover: the FULL package list, every night (a release needs every
+  # package, not a diff like dozenos-build's own rebuild-packages.yml).
+  # linux-kernel is one matrix entry: its bespoke build.py builds the kernel
+  # plus every OOT module in one invocation when given no --packages filter.
   #
-  # shim-signed is EXCLUDED (a second special-case alongside linux-kernel).
-  # Its debian/control Build-Depends pins `shim-unsigned (= <ver>+dozenos1)` --
-  # a Secure Boot shim that VyOS builds from a SEPARATE source repo
-  # (vyos/efi-boot-shim, Source: `shim`) which bakes in a vendor UEFI CA, then
-  # hosts the resulting shim-unsigned in its apt repo. DozenOS does NOT mirror
-  # or rebuild that chain: the DECISION (see dozenos-rebrand/SB-SIGNING.md) is
-  # that the ISO consumes Debian's own stock, Microsoft-signed `shim-signed`
-  # from the Debian archive instead of a DozenOS-CA shim. So the exact-
-  # versioned `shim-unsigned (= <ver>+dozenos1)` never exists here,
-  # `mk-build-deps` can never satisfy it, and the recipe would fail 100% of
-  # the time -- failing the strict `needs: build-packages` gate below and
-  # blocking an otherwise-complete nightly. The recipe dir stays in-tree for
-  # 1:1 upstream mirror parity; it is simply not built. (A future DozenOS-CA
-  # Secure Boot flavor must mirror efi-boot-shim + build shim-unsigned first.)
-  # --------------------------------------------------------------------- #
+  # shim-signed is EXCLUDED: its Build-Depends pins
+  # `shim-unsigned (= <ver>+dozenos1)`, a Secure Boot shim DozenOS
+  # deliberately does not mirror or rebuild -- the ISO uses Debian's stock
+  # Microsoft-signed shim-signed instead (dozenos-rebrand/SB-SIGNING.md) --
+  # so the recipe can never satisfy its build deps here and would fail every
+  # run, blocking the strict `needs: build-packages` gate below. The recipe
+  # dir stays in-tree only for 1:1 upstream mirror parity.
   discover:
     needs: check-changes
     if: needs.check-changes.outputs.changed == 'true'
@@ -333,37 +230,24 @@ jobs:
         working-directory: dozenos-build
         run: |
           set -euo pipefail
-          # vpp is EXCLUDED as its own matrix leg (a third special-case
-          # alongside linux-kernel and shim-signed): the linux-kernel leg
-          # ALREADY builds vpp -- its accel-ppp-ng module needs the vpp
-          # libraries (HAVE_VPP=1), so scripts/package-build/linux-kernel/
-          # build-accel-ppp-ng.sh runs `cd ../vpp && ./build.py` and then
-          # `cp ../vpp/*.deb ${CWD}` (its own comment: "CI will get VPP .deb
-          # here"), landing the full vpp .deb set INSIDE the linux-kernel
-          # recipe dir -- which the linux-kernel leg's `upload-artifact`
-          # (path: .../linux-kernel/*.deb) already ships as deb-linux-kernel.
-          # Keeping a SEPARATE vpp leg meant vpp was built TWICE (once here,
-          # once inside linux-kernel) from two independently-fetched commits
-          # of the moving stable/2510 branch, so BOTH .deb sets (differing only
-          # in git-hash version suffix, e.g. .7911d37ba vs .98a60d673) landed
-          # in the ISO's ephemeral apt pool -- dpkg-scanpackages then collapsed
-          # the duplicates and make-ephemeral-apt-repo.sh's stanza==.deb-count
-          # guard failed the whole ISO build. Building vpp ONLY inside
-          # linux-kernel yields one coherent vpp set and costs zero extra
-          # wall-clock (linux-kernel was already building it regardless).
+          # vpp is NOT a separate matrix leg: the linux-kernel leg already
+          # builds it (accel-ppp-ng needs the vpp libraries, so
+          # build-accel-ppp-ng.sh builds vpp and copies its .debs into the
+          # linux-kernel recipe dir, which that leg's artifact upload ships).
+          # A separate vpp leg built vpp a second time from a different
+          # commit of the moving stable/2510 branch; the near-duplicate .deb
+          # set then failed make-ephemeral-apt-repo.sh's stanza==.deb-count
+          # guard and sank the whole ISO build.
           others=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
             ! -name linux-kernel ! -name shim-signed ! -name vpp -printf '%f\n' | sort)
           packages=$(printf '%s\nlinux-kernel\n' "$others" | jq -R . | jq -sc .)
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
           echo "I: full nightly package matrix (vpp built inside linux-kernel, not a separate leg): $packages"
 
-  # --------------------------------------------------------------------- #
-  # Job: build-packages -- same build-step shape as dozenos-build's own
+  # build-packages: same build-step shape as dozenos-build's own
   # rebuild-packages.yml / rebuild-dispatch.yml (container
   # ghcr.io/dozenos/dozenos-build:rolling, /dozenos + /dozenos-rebrand
-  # mounts, deb-<pkg> artifact upload) -- reused here rather than
-  # reimplemented differently, per the task's "reuse the #8 shape" guidance.
-  # --------------------------------------------------------------------- #
+  # mounts, deb-<pkg> artifact upload).
   build-packages:
     needs: discover
     runs-on: ubuntu-latest
@@ -391,10 +275,9 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-build
 
-      # Required for every C2 recipe's `pre_build_hook =
-      # "/dozenos-rebrand/rename-transform.sh ."` (see dozenos-build's own
-      # rebuild-packages.yml comment) -- /dozenos-rebrand must exist at that
-      # exact absolute path inside the build container.
+      # Every C2 recipe's pre_build_hook shells out to
+      # /dozenos-rebrand/rename-transform.sh at that exact absolute path
+      # inside the build container.
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
@@ -402,22 +285,13 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
-      # ----------------------------------------------------------------- #
-      # deb-cache (dozenos-rebrand/DEB-CACHE.md): a package build's output
-      # is a pure function of its inputs, so derive a content key (recipe
-      # tree hash + branch-tracking scm SHAs + dep-closure mirror HEADs +
-      # global inputs) and reuse the .deb set stored under it by ANY
-      # earlier run -- unchanged packages skip their multi-minute (kernel:
-      # multi-hour) rebuild entirely. Every failure mode degrades to
-      # exactly today's behavior (full rebuild), never to a wrong ISO:
-      # key-computation failure => build without cache; probe failure or
-      # cache repo missing => MISS => build; store failure =>
-      # continue-on-error. The nightly's "coherent, guaranteed-complete
-      # .deb set" requirement (this file's header) still holds by
-      # construction: every matrix leg either HITs (downloads the full
-      # unit set) or rebuilds it in-run -- nothing is ever scanned from
-      # unrelated past CI history.
-      # ----------------------------------------------------------------- #
+      # deb-cache (dozenos-rebrand/DEB-CACHE.md): derive a content key from
+      # the unit's inputs and reuse the .deb set stored under it by any
+      # earlier run. Every failure mode degrades to a full rebuild, never to
+      # a wrong ISO: key failure => build without cache; probe failure or
+      # missing cache repo => MISS => build; store failure =>
+      # continue-on-error. The complete-set guarantee holds by construction:
+      # every leg either HITs the full unit set or rebuilds it in-run.
       - name: Compute deb-cache key
         id: cachekey
         run: |
@@ -434,10 +308,7 @@ jobs:
             echo "key=" >> "$GITHUB_OUTPUT"
           fi
 
-      # GITHUB_TOKEN suffices for the probe: the cache repo is public and
-      # download is a read. A miss (including "cache repo does not exist
-      # yet") is never an error -- it only costs the rebuild we would have
-      # done anyway.
+      # GITHUB_TOKEN suffices: the cache repo is public and this is a read.
       - name: Probe deb cache
         id: probe
         if: steps.cachekey.outputs.key != ''
@@ -459,9 +330,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ matrix.pkg }}" = "linux-kernel" ]; then
-            # linux-kernel family: one build.py invocation, no --packages
-            # filter -- builds the kernel plus every OOT module block,
-            # matching dozenos-build's rebuild-dispatch.yml.
+            # One build.py invocation, no --packages filter: kernel plus
+            # every OOT module block.
             docker run --rm \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
               -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
@@ -477,12 +347,11 @@ jobs:
               bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
           fi
 
-      # Minted AFTER the (possibly multi-hour) build step on purpose: an
-      # App token lives ~1h, so a pre-build mint would be expired by the
-      # time the kernel leg gets here (same pattern as build-image's own
-      # token-lifetime comment). continue-on-error on both steps: a cache
-      # write failure must never fail the nightly -- it only means the
-      # next run rebuilds this unit again.
+      # Minted AFTER the (possibly multi-hour) build step on purpose: an App
+      # token lives ~1h, so a pre-build mint would be expired by the time
+      # the kernel leg gets here. continue-on-error on both steps: a cache
+      # write failure must never fail the nightly -- it only means the next
+      # run rebuilds this unit again.
       - name: Mint GitHub App token (deb-cache store)
         id: cache_token
         if: steps.cachekey.outputs.key != '' && steps.probe.outputs.hit != 'true'
@@ -508,38 +377,27 @@ jobs:
             --manifest "$RUNNER_TEMP/deb-cache-manifest.json"
 
       # Uploads identically on both paths: a probe HIT lands the cached
-      # .debs in the same recipe dir a fresh build writes to, so build-iso
-      # consumes one uniform deb-* artifact contract either way.
+      # .debs in the same recipe dir a fresh build writes to.
       - name: Upload built package(s)
         uses: actions/upload-artifact@v7
         with:
           name: deb-${{ matrix.pkg }}
           path: dozenos-build/scripts/package-build/${{ matrix.pkg }}/*.deb
-          # error (not warn, unlike rebuild-packages.yml's tolerant upload):
-          # this file's header promises a "coherent, guaranteed-complete
-          # .deb set" -- a leg that "succeeds" with zero .debs must fail
+          # error, not warn: a leg that "succeeds" with zero .debs must fail
           # the nightly loudly, not silently thin out the ISO's apt pool.
           if-no-files-found: error
-          # Consumed once, later in this SAME run, by the build-iso job
-          # below -- never meant to outlive this workflow run (unlike
-          # dozenos-build's own rebuild-packages.yml, whose deb-* artifacts
-          # need to survive for other, later, unrelated runs to scan).
+          # Consumed once, later in this same run, by build-iso.
           retention-days: 1
 
-  # --------------------------------------------------------------------- #
-  # Job: discover-flavors -- enumerate DozenOS build flavors from
-  # dozenos-rebrand's flavors/<subdir>/<flavor>.toml tree. Flavors are
-  # rebrand-owned configuration (the dozenos-build mirror's own
-  # data/build-flavors/ is upstream transform output and is NOT used):
-  # dropping a new toml into rebrand adds a build-image matrix leg here
-  # with NO workflow change. Subdirectories let the SAME flavor basename
-  # exist twice with different contents -- planned example:
-  # flavors/upgrade/aws.toml, an upgrade ISO without cloud-init that
-  # still stamps flavor "aws" (the toml BASENAME is the flavor name
-  # burned into the image, which is exactly what `add system image`
-  # compares), so it upgrades systems installed from the
-  # flavors/fresh-install/aws.toml vmdk.
-  # --------------------------------------------------------------------- #
+  # discover-flavors: enumerate flavors from dozenos-rebrand's
+  # flavors/<subdir>/<flavor>.toml tree (rebrand-owned configuration; the
+  # dozenos-build mirror's own data/build-flavors/ is upstream transform
+  # output and is NOT used). Dropping a new toml into rebrand adds a
+  # build-image matrix leg with no workflow change. Subdirectories let the
+  # SAME flavor basename exist twice with different contents -- the toml
+  # basename is the flavor name burned into the image, which is what
+  # `add system image` compares -- e.g. a future flavors/upgrade/aws.toml
+  # upgrading systems installed from the flavors/fresh-install/aws.toml vmdk.
   discover-flavors:
     needs: check-changes
     if: needs.check-changes.outputs.changed == 'true'
@@ -569,10 +427,9 @@ jobs:
           set -euo pipefail
           matrix=$(
             cd dozenos-rebrand/flavors
-            # nullglob: with no matching toml the loop must not run once on
-            # the literal "*/*.toml" (emitting a garbage {"flavor":"*"}
-            # matrix entry that dodges the empty-matrix check below) -- it
-            # must produce nothing so that check fires.
+            # nullglob: with no matching toml the loop must produce nothing
+            # (not one literal "*/*.toml" entry that would dodge the
+            # empty-matrix check below).
             shopt -s nullglob
             for f in */*.toml; do
               subdir="${f%%/*}"
@@ -587,23 +444,19 @@ jobs:
           echo "I: flavor matrix: $matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
-  # --------------------------------------------------------------------- #
-  # Job: build-image -- one matrix leg per (flavor, subdir): assemble the
-  # ephemeral apt repo from every package just built, build that flavor
-  # with an EXPLICIT --version, and upload EXACTLY the files
-  # manifest.json lists as artifacts (= the flavor toml's image_format
-  # list; intermediates like the 4GB .raw behind a qcow2 are never
-  # listed) for the publish job below to sign and release.
-  # --------------------------------------------------------------------- #
+  # build-image: one matrix leg per (flavor, subdir): assemble the ephemeral
+  # apt repo from every package just built, build that flavor with an
+  # explicit --version, and upload exactly the files manifest.json lists as
+  # artifacts for the publish job to sign and release.
   build-image:
     needs: [check-changes, set-version, build-packages, discover-flavors]
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       # One broken flavor must not sink the others' nightly artifacts;
-      # publish runs on success() of this job as a whole though, so a
-      # failed leg still fails the run loudly (by design -- a nightly with
-      # a silently missing flavor would poison the change-gate baseline).
+      # publish still requires success() of this job as a whole, so a failed
+      # leg fails the run loudly (a nightly with a silently missing flavor
+      # would poison the change-gate baseline).
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.discover-flavors.outputs.matrix) }}
@@ -611,20 +464,16 @@ jobs:
       VERSION: ${{ needs.set-version.outputs.version }}
       DEBIAN_MIRROR: http://deb.debian.org/debian/
       DEBIAN_SECURITY_MIRROR: http://deb.debian.org/debian-security
-      # The `secrets` context is NOT available in step-level `if:` conditions
-      # (GitHub rejects the whole workflow with "Unrecognized named-value:
-      # 'secrets'"). Mirror the two MOK secrets into job-level env here so the
-      # signed-vs-unsigned `if:` guards below can test `env.*` instead. Empty
-      # (not set) when the org secrets are absent -- exactly the unsigned case.
+      # The `secrets` context is not available in step-level `if:` (GitHub
+      # rejects the whole workflow) -- mirror the two MOK secrets into
+      # job-level env so the signed-vs-unsigned guards below can test
+      # `env.*`. Empty when the org secrets are absent = the unsigned case.
       MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
       MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
     steps:
-      # One token for both checkouts below. This job then runs up to
-      # timeout-minutes: 90 -- longer than the token's ~1h lifetime -- but
-      # that is fine BY CONSTRUCTION: the token's last use is the second
-      # checkout, minutes in; nothing after (build, artifact upload) touches
-      # it. Do not add a late step that reuses this token -- mint a fresh
-      # one instead.
+      # One token for both checkouts. The job can outlive the token's ~1h
+      # lifetime, but its last use is the second checkout, minutes in. Do
+      # not add a late step that reuses this token -- mint a fresh one.
       - name: Mint GitHub App token (dozenos-build + dozenos-rebrand checkouts)
         id: app_token
         uses: actions/create-github-app-token@v3
@@ -649,13 +498,9 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-rebrand
 
-      # Every deb-<pkg> artifact uploaded by build-packages above, from
-      # THIS SAME run (no run-id given -- actions/download-artifact
-      # defaults to the current workflow run), merged flat into one
-      # directory -- this is the FULL, guaranteed-fresh package set, not a
-      # best-effort scan of past runs (contrast dozenos-build's own
-      # package-smoketest.yml, which does scan history; see this file's
-      # header comment).
+      # All deb-<pkg> artifacts from THIS run (no run-id: download-artifact
+      # defaults to the current run), merged flat -- the full,
+      # guaranteed-fresh package set.
       - name: Download all built .deb artifacts from this run
         uses: actions/download-artifact@v8
         with:
@@ -663,35 +508,24 @@ jobs:
           path: dozenos-debs
           merge-multiple: true
 
-      # No-op (does not run at all) when the org secrets are not
-      # configured -- identical to an unsigned-kernel build in that case.
-      # See dozenos-rebrand/SB-SIGNING.md.
+      # Does not run at all when the org secrets are not configured --
+      # identical to an unsigned-kernel build (dozenos-rebrand/SB-SIGNING.md).
       - name: Inject MOK signing key+cert
         if: ${{ env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
         run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build
 
-      # Ephemeral apt repo is built INSIDE this same container invocation,
-      # right before build-dozenos-image runs -- and it is consumed over
-      # localhost HTTP, NOT via its file:// URL. apt runs INSIDE the
-      # live-build chroot (build/chroot/), whose filesystem root does not
-      # contain the container's /tmp: a container-side file:// path 404s on
-      # every index fetch there (apt merely Ign-s the missing Packages
-      # index but HARD-FAILS `lb build` on the missing Sources index -- and
-      # even past that, every DozenOS package install would fail). The
-      # chroot DOES share the container network namespace, so a
-      # 127.0.0.1-bound server in the container is reachable from chroot
-      # apt at every stage that needs it (chroot_archives, package
-      # installs, and the binary-stage apt update after the squashfs).
-      # A file://-into-chroot seeding variant was tried and abandoned:
-      # placing the repo inside the chroot races lb clean, the bootstrap
-      # cache restore, and debootstrap itself (4 distinct failure modes in
-      # local testing on 2026-07-08), while this HTTP form built a
-      # complete, clean ISO on its first full local run -- verified: the
-      # published squashfs has an empty /etc/apt/sources.list.d (the
-      # .list.chroot entry never ships) and no repo bytes in it.
-      # --version is passed EXPLICITLY (see set-version job above)
-      # -- build-dozenos-image's own default does not match DozenOS's
-      # release scheme.
+      # The ephemeral apt repo is built inside this same container
+      # invocation and consumed over localhost HTTP, NOT via its file://
+      # URL: apt runs inside the live-build chroot, whose filesystem root
+      # does not contain the container's /tmp, so a container-side file://
+      # path 404s on every index fetch there (apt Ign-s the missing Packages
+      # index but HARD-FAILS `lb build` on the missing Sources index). The
+      # chroot does share the container network namespace, so a
+      # 127.0.0.1-bound server is reachable from chroot apt at every stage.
+      # Do not revisit file:// (a file://-into-chroot seeding variant was
+      # tried and races lb clean, the bootstrap cache restore, and
+      # debootstrap itself). See make-ephemeral-apt-repo.sh's CONSUMPTION
+      # WARNING.
       - name: Build signed DozenOS ${{ matrix.flavor }} image (${{ matrix.subdir }})
         run: |
           docker run --rm \
@@ -712,13 +546,11 @@ jobs:
               DOZENOS_MIRROR=""
               if [ -n "$(find /dozenos-debs -name "*.deb" -print -quit 2>/dev/null)" ]; then
                 /dozenos-rebrand/release/make-ephemeral-apt-repo.sh /dozenos-debs /tmp/dozenos-apt-repo >/dev/null
-                # Serve the repo over localhost HTTP -- see this step-s
-                # header comment for why file:// cannot work here (the
-                # hyphen is deliberate, an apostrophe would end this
-                # single-quoted bash -c block). Readiness is verified
-                # before lb build starts; the server dies with the
-                # container at step end. If it ever died mid-build, apt
-                # would fail the job loudly rather than build a wrong ISO.
+                # localhost HTTP, not file:// -- see this step-s header
+                # comment. Readiness is verified before lb build starts; if
+                # the server ever died mid-build, apt would fail the job
+                # loudly rather than build a wrong ISO. (Comments in this
+                # single-quoted block must stay apostrophe-free.)
                 (cd /tmp/dozenos-apt-repo && exec python3 -m http.server --bind 127.0.0.1 8099 >/tmp/dozenos-apt-http.log 2>&1) &
                 for i in $(seq 1 50); do
                   curl -fsS -o /dev/null http://127.0.0.1:8099/dists/rolling/Release && break
@@ -730,14 +562,11 @@ jobs:
               else
                 echo "W: no .deb files found under /dozenos-debs -- unexpected for a full nightly rebuild; building with an empty --dozenos-mirror anyway rather than failing the whole nightly"
               fi
-              # --build-type is intentionally NOT passed: build-dozenos-image
-              # then falls back to the data/defaults.toml build_type of
-              # development. DozenOS nightlies are rolling development builds,
-              # not tagged releases -- keep them typed as development (affects
-              # os-release PRETTY_NAME/VERSION, the apt release-train pin, and
-              # the version string; does not change whether the ISO builds).
-              # (Keep this comment apostrophe-free: it sits inside a bash -c
-              # single-quoted block where an apostrophe would end the string.)
+              # --build-type is intentionally NOT passed: nightlies stay
+              # typed as development (the data/defaults.toml fallback), which
+              # affects os-release naming and the apt release-train pin.
+              # --version IS passed explicitly -- the tool-s own default does
+              # not match the DozenOS release scheme.
               sudo --preserve-env ./build-dozenos-image \
                 --architecture amd64 \
                 --build-by "$BUILD_BY" \
@@ -748,30 +577,25 @@ jobs:
                 "$BUILD_FLAVOR"
             '
 
-      # Always runs (even if the build step above failed) to shrink the
-      # window the decoded private key sits in this job's own git worktree.
-      # No-op when the inject step above did not run either.
+      # Always runs (even if the build failed) to shrink the window the
+      # decoded private key sits in this job's worktree.
       - name: Clean up injected MOK key
         if: ${{ always() && env.MOK_SIGNING_KEY != '' && env.MOK_SIGNING_CERT != '' }}
         run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
 
-      # build-dozenos-image ran under sudo INSIDE the container, so
-      # dozenos-build/build/ and the ISO come back root-owned on the
-      # runner. The sign step below runs as the runner user and minisign
-      # must create "<iso>.minisig" NEXT TO the ISO in that directory --
-      # root ownership made it die with "Permission denied" (run
-      # 28946916959, the first run to get past the ISO build itself).
-      # Reclaim ownership host-side before anything needs to write there.
+      # build-dozenos-image ran under sudo inside the container, so the
+      # build tree comes back root-owned and minisign (running as the runner
+      # user, writing <iso>.minisig next to the ISO) would die with
+      # "Permission denied". Reclaim ownership before anything writes there.
       - name: Reclaim ownership of build artifacts
         run: sudo chown -R "$(id -u):$(id -g)" dozenos-build/build
 
-      # manifest.json's "artifacts" is EXACTLY the flavor toml's declared
-      # image_format list (build-dozenos-image filters everything else
-      # out, e.g. the .raw intermediate behind a qcow2) -- so uploading
-      # manifest-listed files implements "only formats the toml mentions
-      # get released" with zero per-flavor logic here. meta.json carries
-      # the flavor name to the publish job (used for version.json
-      # entries), avoiding brittle filename parsing there.
+      # manifest.json's "artifacts" is exactly the flavor toml's declared
+      # image_format list (intermediates like the .raw behind a qcow2 are
+      # never listed), so uploading manifest-listed files implements "only
+      # formats the toml mentions get released" with zero per-flavor logic.
+      # meta.json carries the flavor name to the publish job, avoiding
+      # brittle filename parsing there.
       - name: Collect manifest-declared artifacts
         run: |
           set -euo pipefail
@@ -803,32 +627,25 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  # --------------------------------------------------------------------- #
-  # Job: publish -- gather every flavor's artifacts, minisign each file,
-  # generate the multi-artifact version.json, publish ONE GitHub Release
-  # with everything, and commit version.json + mirror-state.json back to
-  # the default branch as the stable "latest" pointer / change-gate
-  # baseline (DISTRIBUTION.md §4). A single job by design: exactly one
-  # `gh release create` may happen per tag (matrix legs racing to create
-  # the same release would conflict), and the change-gate baseline must
-  # only advance when EVERY flavor built (a skipped/failed leg skips this
-  # job, so the next tick rebuilds).
-  # --------------------------------------------------------------------- #
+  # publish: gather every flavor's artifacts, minisign each file, generate
+  # the multi-artifact version.json, publish ONE GitHub Release, and commit
+  # version.json + mirror-state.json back to the default branch as the
+  # stable "latest" pointer / change-gate baseline (DISTRIBUTION.md §4). A
+  # single job by design: exactly one `gh release create` may happen per tag,
+  # and the baseline must only advance when EVERY flavor built (a
+  # skipped/failed leg skips this job, so the next tick rebuilds).
   publish:
     needs: [check-changes, set-version, build-image]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
-      # contents: write needed for gh release create (via GITHUB_TOKEN,
-      # same-repo -- DISTRIBUTION.md §7) and for the version.json commit
-      # back to this repo's own default branch below.
+      # For gh release create (GITHUB_TOKEN, same-repo -- DISTRIBUTION.md §7)
+      # and the version.json commit-back below.
       contents: write
     env:
       VERSION: ${{ needs.set-version.outputs.version }}
     steps:
-      # Self-checkout: this repo (dozenos/dozenos-nightly-build). Needed for
-      # the version.json commit-back step at the end, and to host
-      # minisign.pub (see ./minisign.pub, ../../README.md).
+      # Self-checkout, needed for the commit-back step and minisign.pub.
       - name: Checkout dozenos-nightly-build (this repo)
         uses: actions/checkout@v7
         with:
@@ -851,13 +668,11 @@ jobs:
           path: dozenos-rebrand
 
       # NO merge-multiple here (unlike the deb download in build-image):
-      # each flavor leg's files land in their own images/image-<subdir>-
-      # <flavor>/ directory next to that leg's meta.json. Two subdirs may
-      # legitimately ship the SAME flavor name (the aws install/upgrade
-      # split), and a merged flat directory would let same-named files
-      # silently overwrite each other; per-leg directories turn any
-      # cross-leg filename collision into a loud release-upload error
-      # instead.
+      # two subdirs may legitimately ship the SAME flavor name (the aws
+      # install/upgrade split), and a merged flat directory would let
+      # same-named files silently overwrite each other. Per-leg directories
+      # turn any cross-leg filename collision into a loud release-upload
+      # error instead.
       - name: Download all image artifacts from this run
         uses: actions/download-artifact@v8
         with:
@@ -869,9 +684,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y minisign
 
-      # Signs every artifact (minisign) and publishes the GitHub Release
-      # in THIS repo. GITHUB_TOKEN (not an App token) is sufficient --
-      # same-repo publish, see dozenos-rebrand/DISTRIBUTION.md §7.
       - name: Generate version.json, sign all artifacts, publish Release
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -912,50 +724,37 @@ jobs:
             --title "DozenOS nightly $VERSION"
 
       # Updates the stable "latest" version.json on the default branch (in
-      # addition to the frozen copy already attached to the Release above --
-      # DISTRIBUTION.md §4 leaves the choice of default-branch-commit vs.
-      # latest-tagged-release vs. both to item #17; this repo does the
-      # default-branch-commit form since it needs no extra release alias).
+      # addition to the frozen copy attached to the Release above).
       - name: Commit version.json + mirror-state.json to default branch
         working-directory: nightly-build
         env:
           # The fingerprint check-changes OBSERVED at the start of this run.
-          # Persisting THIS (not a fresh re-read) is deliberate: a mirror that
-          # synced while this ~2-3h build was running is intentionally NOT
-          # recorded as "built", so the next tick rebuilds for it. See
-          # check-changes' own comment.
+          # Persisting THIS (not a fresh re-read) is deliberate: a mirror
+          # that synced while this build was running must stay unrecorded so
+          # the next tick rebuilds for it.
           MIRROR_SHAS: ${{ needs.check-changes.outputs.shas }}
         run: |
           set -euo pipefail
           git config user.name "DozenOS autobuild"
           git config user.email "autobuild@dozenos.local"
           # version.json was generated into this checkout by the publish
-          # step above -- stash a copy outside the worktree so the
-          # reset-to-remote below cannot lose it.
+          # step -- stash a copy outside the worktree so the reset-to-remote
+          # below cannot lose it.
           cp version.json "$RUNNER_TEMP/version.json"
-          # Retry loop against a MOVED REMOTE: this job's checkout is from
-          # run start, but the branch legitimately moves during a run
-          # (workflow edits land mid-build; run 29010033346's commit-back
-          # was remote-rejected exactly this way). Both files are
-          # whole-file regenerated from this run's own data -- nothing is
-          # merged -- so the correct strategy is: sync to the CURRENT
-          # remote tip, re-write both files on top, push; on a lost race,
-          # re-sync and try again.
+          # Retry loop against a moved remote: this job's checkout is from
+          # run start, but the branch legitimately moves during a multi-hour
+          # run. Both files are whole-file regenerated from this run's own
+          # data -- nothing is merged -- so: sync to the current remote tip,
+          # re-write both files on top, push; on a lost race, retry.
           #
-          # (Why `github.ref_name`, not `github.event.repository.default_branch
-          # || 'main'`: the event payload's `repository` object is unset on
-          # `schedule` -- this workflow's unattended path -- so that
-          # expression silently degrades to a hardcoded guess. `ref_name` is
-          # a top-level context field, always populated, and matches what
-          # the no-`ref:` checkout above actually checked out.)
+          # github.ref_name (not github.event.repository.default_branch):
+          # the event payload's `repository` object is unset on `schedule`,
+          # this workflow's unattended path; ref_name is always populated
+          # and matches what the no-`ref:` checkout above checked out.
           for attempt in 1 2 3; do
             git fetch origin "${{ github.ref_name }}"
             git reset --hard "origin/${{ github.ref_name }}"
             cp "$RUNNER_TEMP/version.json" version.json
-            # New change-gate baseline: what this build actually consumed
-            # (check-changes' snapshot -- NOT a fresh re-read; a mirror that
-            # synced mid-build must stay unrecorded so the next tick
-            # rebuilds for it, see check-changes' own comment).
             printf '%s\n' "$MIRROR_SHAS" | jq -S . > mirror-state.json
             git add version.json mirror-state.json
             if git diff --cached --quiet; then
@@ -972,15 +771,12 @@ jobs:
           echo "::error::commit-back failed after 3 attempts -- version.json/mirror-state.json on ${{ github.ref_name }} are stale (the Release itself already published fine); commit them manually or re-run this job" >&2
           exit 1
 
-  # --------------------------------------------------------------------- #
-  # Job: prune-deb-cache -- cache hygiene (dozenos-rebrand/DEB-CACHE.md).
-  # Keeps the newest 3 entries per build unit on dozenos/dozenos-deb-cache
-  # and deletes the rest (tags included). Runs only after a successful
-  # publish: pruning is pure hygiene and must never be able to fail (or
-  # race) a nightly -- hence also continue-on-error on every step. Keeping
-  # 3 (not 1) covers a mid-day rebuild-dispatch store plus the change-gate
-  # baseline entry still referenced by a possible next-tick re-run.
-  # --------------------------------------------------------------------- #
+  # prune-deb-cache: keep the newest 3 entries per build unit on
+  # dozenos/dozenos-deb-cache, delete the rest (tags included). Runs only
+  # after a successful publish, and pruning must never be able to fail a
+  # nightly -- hence continue-on-error on every step. Keeping 3 (not 1)
+  # covers a mid-day rebuild-dispatch store plus the entry still referenced
+  # by a possible next-tick re-run.
   prune-deb-cache:
     needs: publish
     runs-on: ubuntu-latest
