@@ -295,8 +295,10 @@
     });
 
   // Best-effort: labels are an enhancement, so any failure here just means
-  // no install-type chips.
-  var versionJsonReq = fetch(VERSION_JSON)
+  // no install-type chips. The query param busts raw.githubusercontent's
+  // 5-minute CDN/browser cache so a just-published release labels
+  // immediately.
+  var versionJsonReq = fetch(VERSION_JSON + '?ts=' + Date.now())
     .then(function (res) { return res.ok ? res.json() : null; })
     .catch(function () { return null; });
 
