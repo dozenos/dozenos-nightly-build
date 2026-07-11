@@ -201,6 +201,14 @@ jobs:
   # so the recipe can never satisfy its build deps here and would fail every
   # run, blocking the strict `needs: build-packages` gate below. The recipe
   # dir stays in-tree only for 1:1 upstream mirror parity.
+  #
+  # unionfs-fuse is EXCLUDED: the recipe's 3.6 ships only /usr/bin/unionfs,
+  # apt prefers it (3.6 > 1.0-1) over Debian bookworm's stock package, and
+  # losing Debian's /usr/bin/unionfs-fuse compat name breaks EVERY config
+  # commit in the built image -- vyatta-cfg execs that exact path, the
+  # session unionfs mount ENOENTs, and the committed active config silently
+  # degrades to the session diff (root cause of the 50/51 test-config-load
+  # failures, 2026-07-11). The ISO must install Debian's stock package.
   discover:
     needs: check-changes
     if: needs.check-changes.outputs.changed == 'true'
@@ -239,7 +247,8 @@ jobs:
           # set then failed make-ephemeral-apt-repo.sh's stanza==.deb-count
           # guard and sank the whole ISO build.
           others=$(find scripts/package-build -mindepth 1 -maxdepth 1 -type d \
-            ! -name linux-kernel ! -name shim-signed ! -name vpp -printf '%f\n' | sort)
+            ! -name linux-kernel ! -name shim-signed ! -name vpp \
+            ! -name unionfs-fuse -printf '%f\n' | sort)
           packages=$(printf '%s\nlinux-kernel\n' "$others" | jq -R . | jq -sc .)
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
           echo "I: full nightly package matrix (vpp built inside linux-kernel, not a separate leg): $packages"
