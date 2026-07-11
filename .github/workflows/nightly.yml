@@ -627,15 +627,71 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
+  # test-config-load: boot the generic ISO in QEMU and load every smoketest
+  # config against it (`make testc`) before anything is published. Only the
+  # generic flavor is tested: the other flavors differ in packaging/format,
+  # not in config-load behavior, and one QEMU pass is the whole gate.
+  # image-fresh-install-generic is download-artifact'd by exact name, so a
+  # flavor-toml rename/move that drops it fails this job loudly instead of
+  # silently unguarding publish.
+  test-config-load:
+    needs: build-image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Mint GitHub App token (dozenos-build checkout)
+        id: app_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.BUILD_APP_ID }}
+          private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
+          owner: dozenos
+          repositories: dozenos-build
+
+      # The test harness (scripts/check-qemu-install, `make testc`) lives in
+      # dozenos-build, not in this repo.
+      - name: Checkout dozenos-build
+        uses: actions/checkout@v7
+        with:
+          repository: dozenos/dozenos-build
+          ref: rolling
+          token: ${{ steps.app_token.outputs.token }}
+          path: dozenos-build
+
+      - name: Download generic image artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: image-fresh-install-generic
+          path: image
+
+      # The Makefile's ISO_PATH default is build/live-image-amd64.hybrid.iso;
+      # the artifact carries the release-named ISO, so stage it there.
+      - name: Stage generic ISO at the Makefile's ISO_PATH
+        run: |
+          set -euo pipefail
+          iso=$(jq -r '.artifacts[] | select(endswith(".iso"))' image/meta.json)
+          mkdir -p dozenos-build/build
+          mv "image/$iso" dozenos-build/build/live-image-amd64.hybrid.iso
+
+      - name: DozenOS config load tests
+        run: |
+          docker run --rm \
+            --sysctl net.ipv6.conf.lo.disable_ipv6=0 --privileged \
+            -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+            -w /dozenos \
+            ghcr.io/dozenos/dozenos-build:rolling \
+            bash -c 'sudo make testc'
+
   # publish: gather every flavor's artifacts, minisign each file, generate
   # the multi-artifact version.json, publish ONE GitHub Release, and commit
   # version.json + mirror-state.json back to the default branch as the
   # stable "latest" pointer / change-gate baseline (DISTRIBUTION.md §4). A
   # single job by design: exactly one `gh release create` may happen per tag,
   # and the baseline must only advance when EVERY flavor built (a
-  # skipped/failed leg skips this job, so the next tick rebuilds).
+  # skipped/failed leg skips this job, so the next tick rebuilds) AND the
+  # generic ISO passed the config-load gate above.
   publish:
-    needs: [check-changes, set-version, build-image]
+    needs: [check-changes, set-version, build-image, test-config-load]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
