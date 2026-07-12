@@ -209,6 +209,11 @@ jobs:
   # session unionfs mount ENOENTs, and the committed active config silently
   # degrades to the session diff (root cause of the 50/51 test-config-load
   # failures, 2026-07-11). The ISO must install Debian's stock package.
+  # BOOKWORM-SCOPED: upstream added this recipe for the next Debian base
+  # (which drops the old-name package). When the base moves past bookworm,
+  # UN-exclude it here + rebuild-packages.yml + rebuild-dispatch.yml and
+  # solve the binary-name mismatch (recipe compat symlink, or upstream's
+  # vyatta-cfg exec-path fix -- check upstream first).
   discover:
     needs: check-changes
     if: needs.check-changes.outputs.changed == 'true'
