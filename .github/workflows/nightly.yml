@@ -289,9 +289,8 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-build
 
-      # Every C2 recipe's pre_build_hook shells out to
-      # /dozenos-rebrand/rename-transform.sh at that exact absolute path
-      # inside the build container.
+      # deb-cache.sh and its cache-key inputs live in dozenos-rebrand
+      # (DEB-CACHE.md).
       - name: Checkout dozenos-rebrand
         uses: actions/checkout@v7
         with:
@@ -348,14 +347,12 @@ jobs:
             # every OOT module block.
             docker run --rm \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
-              -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
               -w /dozenos \
               ghcr.io/dozenos/dozenos-build:rolling \
               bash -c "cd scripts/package-build/linux-kernel && python3 build.py"
           else
             docker run --rm \
               -v "${{ github.workspace }}/dozenos-build:/dozenos" \
-              -v "${{ github.workspace }}/dozenos-rebrand:/dozenos-rebrand" \
               -w /dozenos \
               ghcr.io/dozenos/dozenos-build:rolling \
               bash -c "cd scripts/package-build/${{ matrix.pkg }} && python3 ../build.py"
