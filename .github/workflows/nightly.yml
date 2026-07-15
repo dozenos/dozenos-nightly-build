@@ -80,8 +80,18 @@ jobs:
       changed: ${{ steps.gate.outputs.changed }}
       shas: ${{ steps.gate.outputs.shas }}
     steps:
+      # `ref:` is load-bearing -- without it checkout pins to github.sha, the
+      # default-branch tip from when the run was CREATED. A run queued behind
+      # another (concurrency, cancel-in-progress: false) would then read a
+      # baseline predating the previous run's commit-back and rebuild an
+      # already-built fingerprint. Both gate operands must be read at
+      # job-execution time. github.ref_name (not the event payload's
+      # repository.default_branch) for the same reason as the commit-back
+      # below: the payload's `repository` object is unset on `schedule`.
       - name: Checkout dozenos-nightly-build (for the recorded baseline)
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
 
       # Enumerating org repos + reading each mirror's HEAD is a cross-repo
       # read. No `repositories:` filter: this step genuinely needs every
