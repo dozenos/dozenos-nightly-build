@@ -648,17 +648,38 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  # test-config-load: boot the generic ISO in QEMU and load every smoketest
-  # config against it (`make testc`) before anything is published. Only the
-  # generic flavor is tested: the other flavors differ in packaging/format,
-  # not in config-load behavior, and one QEMU pass is the whole gate.
+  # test-image: boot the generic ISO in QEMU and run the same test matrix
+  # upstream's package-smoketest.yml runs for rolling (where every leg,
+  # VPP included, is on GitHub-hosted ubuntu-24.04). The smoketest tooling
+  # is present because nightly ISOs are development build-type, which ships
+  # dozenos-1x-smoketest. Only the generic flavor is tested: the other
+  # flavors differ in packaging/format, not runtime behavior.
   # image-fresh-install-generic is download-artifact'd by exact name, so a
   # flavor-toml rename/move that drops it fails this job loudly instead of
-  # silently unguarding publish.
-  test-config-load:
+  # silently unguarding publish. Per-target timeouts mirror upstream's.
+  test-image:
+    name: test (${{ matrix.target }})
     needs: build-image
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: testc
+            timeout: 90
+          - target: test-no-interfaces-no-vpp
+            timeout: 180
+          - target: test-interfaces
+            timeout: 180
+          - target: test-vpp
+            timeout: 90
+          - target: testcvpp
+            timeout: 90
+          - target: testraid
+            timeout: 20
+          - target: testtpm
+            timeout: 30
     steps:
       - name: Mint GitHub App token (dozenos-build checkout)
         id: app_token
@@ -669,8 +690,8 @@ jobs:
           owner: dozenos
           repositories: dozenos-build
 
-      # The test harness (scripts/check-qemu-install, `make testc`) lives in
-      # dozenos-build, not in this repo.
+      # The test harness (scripts/check-qemu-install and the make targets)
+      # lives in dozenos-build, not in this repo.
       - name: Checkout dozenos-build
         uses: actions/checkout@v7
         with:
@@ -694,14 +715,14 @@ jobs:
           mkdir -p dozenos-build/build
           mv "image/$iso" dozenos-build/build/live-image-amd64.hybrid.iso
 
-      - name: DozenOS config load tests
+      - name: DozenOS ${{ matrix.target }}
         run: |
           docker run --rm \
             --sysctl net.ipv6.conf.lo.disable_ipv6=0 --privileged \
             -v "${{ github.workspace }}/dozenos-build:/dozenos" \
             -w /dozenos \
             ghcr.io/dozenos/dozenos-build:rolling \
-            bash -c 'sudo make testc'
+            bash -c 'sudo make ${{ matrix.target }}'
 
   # publish: gather every flavor's artifacts, minisign each file, generate
   # the multi-artifact version.json, publish ONE GitHub Release, and commit
@@ -710,9 +731,9 @@ jobs:
   # single job by design: exactly one `gh release create` may happen per tag,
   # and the baseline must only advance when EVERY flavor built (a
   # skipped/failed leg skips this job, so the next tick rebuilds) AND the
-  # generic ISO passed the config-load gate above.
+  # generic ISO passed every test-image leg above.
   publish:
-    needs: [check-changes, set-version, build-image, test-config-load]
+    needs: [check-changes, set-version, build-image, test-image]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
