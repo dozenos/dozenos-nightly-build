@@ -1,9 +1,9 @@
 {
   "dozenos-1x": "4c9b6bd26d37bb893ddfcb483eb19021eefa0310",
-  "dozenos-build": "1dbcfde25c11b12fc905684755ca9acc5d6e099d",
+  "dozenos-build": "975c3e07ab8a75eaceead04309a846d51d79b0e1",
   "dozenos-cloud-init": "d741f58d3a8fe98cba85d967bfb563c295cbb6ee",
   "dozenos-http-api-tools": "4c6ad7e7b7f4379eae241113debe6cb7f607071b",
-  "dozenos-rebrand": "849212c40b32317110e9d6260067efc7c71b8874",
+  "dozenos-rebrand": "75cb31413b01f313648f8ec056bde844c2f06483",
   "dozenos-vpp-patches": "878653cb07122f0b8ea79a6f17c5fdf3ea9ce67f",
   "dozenos1x-config": "5fffce7888c817027d33946491d1e7b138bd0254",
   "hvinfo": "6973872a0e34922ee8762a0b23302b9a936b3360",
