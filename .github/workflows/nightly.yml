@@ -648,15 +648,17 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  # test-image: boot the generic ISO in QEMU and run the same test matrix
-  # upstream's package-smoketest.yml runs for rolling (where every leg,
-  # VPP included, is on GitHub-hosted ubuntu-24.04). The smoketest tooling
-  # is present because nightly ISOs are development build-type, which ships
-  # dozenos-1x-smoketest. Only the generic flavor is tested: the other
-  # flavors differ in packaging/format, not runtime behavior.
-  # image-fresh-install-generic is download-artifact'd by exact name, so a
-  # flavor-toml rename/move that drops it fails this job loudly instead of
-  # silently unguarding publish. Per-target timeouts mirror upstream's.
+  # test-image: boot the built image in QEMU and run every testcase target
+  # upstream's Makefile defines (all of them GitHub-hosted ubuntu-24.04,
+  # VPP included). The smoketest tooling is present because nightly ISOs
+  # are development build-type, which ships dozenos-1x-smoketest.
+  # Every leg but test-ci-qcow2 runs the generic ISO; test-ci-qcow2 needs a
+  # cloud-init disk image, so it takes the proxmox flavor's qcow2.
+  # testsb enrolls the image's MOK in OVMF, so it only passes on an ISO
+  # built with the MOK signing secrets present.
+  # Artifacts are download-artifact'd by exact name, so a flavor-toml
+  # rename/move that drops one fails this job loudly instead of silently
+  # unguarding publish.
   test-image:
     name: test (${{ matrix.target }})
     needs: build-image
@@ -668,18 +670,37 @@ jobs:
         include:
           - target: testc
             timeout: 90
+            artifact: image-fresh-install-generic
           - target: test-no-interfaces-no-vpp
             timeout: 180
+            artifact: image-fresh-install-generic
           - target: test-interfaces
             timeout: 180
+            artifact: image-fresh-install-generic
           - target: test-vpp
             timeout: 90
+            artifact: image-fresh-install-generic
           - target: testcvpp
             timeout: 90
+            artifact: image-fresh-install-generic
           - target: testraid
             timeout: 20
+            artifact: image-fresh-install-generic
           - target: testtpm
             timeout: 30
+            artifact: image-fresh-install-generic
+          - target: testifname
+            timeout: 30
+            artifact: image-fresh-install-generic
+          - target: testsb
+            timeout: 30
+            artifact: image-fresh-install-generic
+          - target: test-image-update
+            timeout: 60
+            artifact: image-fresh-install-generic
+          - target: test-ci-qcow2
+            timeout: 30
+            artifact: image-fresh-install-proxmox
     steps:
       - name: Mint GitHub App token (dozenos-build checkout)
         id: app_token
@@ -700,20 +721,34 @@ jobs:
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-build
 
-      - name: Download generic image artifact
+      - name: Download image artifact
         uses: actions/download-artifact@v8
         with:
-          name: image-fresh-install-generic
+          name: ${{ matrix.artifact }}
           path: image
 
-      # The Makefile's ISO_PATH default is build/live-image-amd64.hybrid.iso;
-      # the artifact carries the release-named ISO, so stage it there.
-      - name: Stage generic ISO at the Makefile's ISO_PATH
+      # The Makefile's ISO_PATH default is build/live-image-amd64.hybrid.iso,
+      # and test-ci-qcow2 picks the newest build/*.qcow2; the artifacts carry
+      # release-named files, so stage them where those defaults look.
+      - name: Stage image at the Makefile's expected path
         run: |
           set -euo pipefail
-          iso=$(jq -r '.artifacts[] | select(endswith(".iso"))' image/meta.json)
           mkdir -p dozenos-build/build
-          mv "image/$iso" dozenos-build/build/live-image-amd64.hybrid.iso
+          staged=0
+          iso=$(jq -r '.artifacts[] | select(endswith(".iso"))' image/meta.json)
+          if [ -n "$iso" ]; then
+            mv "image/$iso" dozenos-build/build/live-image-amd64.hybrid.iso
+            staged=1
+          fi
+          qcow2=$(jq -r '.artifacts[] | select(endswith(".qcow2"))' image/meta.json)
+          if [ -n "$qcow2" ]; then
+            mv "image/$qcow2" "dozenos-build/build/$qcow2"
+            staged=1
+          fi
+          if [ "$staged" = 0 ]; then
+            echo "::error::${{ matrix.artifact }} carries neither an .iso nor a .qcow2"
+            exit 1
+          fi
 
       - name: DozenOS ${{ matrix.target }}
         run: |
@@ -731,7 +766,7 @@ jobs:
   # single job by design: exactly one `gh release create` may happen per tag,
   # and the baseline must only advance when EVERY flavor built (a
   # skipped/failed leg skips this job, so the next tick rebuilds) AND the
-  # generic ISO passed every test-image leg above.
+  # images passed every test-image leg above.
   publish:
     needs: [check-changes, set-version, build-image, test-image]
     runs-on: ubuntu-24.04
