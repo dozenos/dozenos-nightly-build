@@ -47,7 +47,7 @@ on:
   schedule:
     # Mondays, ~1h after the shared mirror self-sync cron ('17 3 * * *') and
     # off the top of the hour (GitHub scheduler pile-up).
-    - cron: '17 4 * * 1'
+    - cron: '17 20 * * 1'
   workflow_dispatch:
     inputs:
       version_override:
