@@ -45,8 +45,8 @@ on:
     # rebuild-dispatch.yml).
     types: [dozenos-image-build-requested, dozenos-incremental-rebuild-complete]
   schedule:
-    # Mondays, ~1h after the shared mirror self-sync cron ('17 3 * * *') and
-    # off the top of the hour (GitHub scheduler pile-up).
+    # Mondays 20:17 UTC (04:17 Asia/Taipei) -- off the top of the hour
+    # (GitHub scheduler pile-up).
     - cron: '17 20 * * 1'
   workflow_dispatch:
     inputs:
