@@ -770,13 +770,29 @@ jobs:
       # not substrings.
       - name: DozenOS ${{ matrix.target }}
         continue-on-error: ${{ contains(fromJSON(env.ADVISORY_TARGETS), matrix.target) }}
+        env:
+          IS_ADVISORY: ${{ contains(fromJSON(env.ADVISORY_TARGETS), matrix.target) }}
         run: |
-          docker run --rm \
-            --sysctl net.ipv6.conf.lo.disable_ipv6=0 --privileged \
-            -v "${{ github.workspace }}/dozenos-build:/dozenos" \
-            -w /dozenos \
-            ghcr.io/dozenos/dozenos-build:rolling \
-            bash -c 'sudo make ${{ matrix.target }}'
+          run_target() {
+            docker run --rm \
+              --sysctl net.ipv6.conf.lo.disable_ipv6=0 --privileged \
+              -v "${{ github.workspace }}/dozenos-build:/dozenos" \
+              -w /dozenos \
+              ghcr.io/dozenos/dozenos-build:rolling \
+              bash -c 'sudo make ${{ matrix.target }}'
+          }
+          # An advisory leg fails deterministically, so retrying wastes CI time.
+          if [ "$IS_ADVISORY" = "true" ]; then
+            run_target
+            exit $?
+          fi
+          if run_target; then
+            exit 0
+          fi
+          echo "::warning::${{ matrix.target }} attempt 1 failed, retrying once"
+          docker ps -aq --filter ancestor=ghcr.io/dozenos/dozenos-build:rolling | xargs -r docker rm -f
+          run_target
+          exit $?
 
   # publish: gather every flavor's artifacts, minisign each file, generate
   # the multi-artifact version.json, publish ONE GitHub Release, and commit
