@@ -842,6 +842,10 @@ jobs:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
           MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # A flavor on this list emits the same .iso name from its
+          # fresh-install leg and its upgrade leg; release asset names
+          # must be unique.
+          FRESH_INSTALL_ISO_RENAME_FLAVORS: '["vultr"]'
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -856,6 +860,13 @@ jobs:
               if [ ! -f "$path" ]; then
                 echo "::error::artifact '$name' from $meta missing on disk" >&2
                 exit 1
+              fi
+              # Rename the fresh-install .iso for listed flavors (see FRESH_INSTALL_ISO_RENAME_FLAVORS above).
+              if jq -e --arg f "$flavor" 'index($f) != null' <<<"$FRESH_INSTALL_ISO_RENAME_FLAVORS" >/dev/null && [ "$subdir" = "fresh-install" ] && [[ "$name" == *-amd64.iso ]]; then
+                new_name="${name%-amd64.iso}-fresh-install-amd64.iso"
+                mv -- "$path" "$dir/$new_name"
+                name="$new_name"
+                path="$dir/$new_name"
               fi
               # FLAVOR:SUBDIR:PATH -- the flavors/<subdir> becomes the
               # artifact's install_type in version.json (fresh-install vs
