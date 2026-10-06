@@ -1,11 +1,11 @@
 {
-  "dozenos-1x": "057c0a5a041b4911566e0bbeb966119fd477be4d",
-  "dozenos-build": "185522613822cb0f64a9d8aff6709939d29512b5",
+  "dozenos-1x": "4aeb8c113d7946ff99cfb77d4cbbc3f81cd4f7d3",
+  "dozenos-build": "1462ca2b7037e5161d167b9a7ca7369693be2e96",
   "dozenos-cloud-init": "fe1bb5866fc44c3087782fe4e5e7b7444c966ef8",
-  "dozenos-http-api-tools": "86bf02cf93b5eaf1064ea38e15b05dbdcfa3ce2f",
+  "dozenos-http-api-tools": "cf07b205b123cb7c5fe6018ed50c2c411ea9fcc3",
   "dozenos-rebrand": "f231e576f85cd2526598ac345ad869b3122d8ca9",
   "dozenos-vpp-patches": "5ca713b24d09edd3e0ce65c5cd873583b9dceb58",
-  "dozenos1x-config": "7119b4129391eb6e293da327f3a9ea84b2d7ed9c",
+  "dozenos1x-config": "d7b28bd5fa467c4215f92432fc60cbcddada71f4",
   "hvinfo": "6973872a0e34922ee8762a0b23302b9a936b3360",
   "ipaddrcheck": "d32c89134cb6dc6319c29fba6e77a7f5f314c5d9",
   "libnss-mapuser": "101d827e0021b0d091a3d32c02c64b709483c190",
@@ -17,6 +17,6 @@
   "shim-signed": "0abbd71c0d6cf490e5ba2a1742324839bbbe1e3a",
   "vyatta-bash": "8d6365f9f90b0499dc96112ed925fbdffc313510",
   "vyatta-biosdevname": "1ca49f98d55ec25e1aef50e089b1df643422005b",
-  "vyatta-cfg": "cb57595919077a217e6e1bb757a542469de1b259",
+  "vyatta-cfg": "8c037c2e7f29e499dbd43fb24ee3c3b1c56cfad0",
   "vyconf": "7c00030d9bd1c71cc7970bff23d9e0d4d7cc1fd6"
 }
