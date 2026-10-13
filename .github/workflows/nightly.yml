@@ -655,8 +655,9 @@ jobs:
   # Every leg but test-ci-qcow2 runs the generic ISO; test-ci-qcow2 needs a
   # cloud-init disk image, so it takes the proxmox flavor's qcow2, and it
   # is the one advisory (non-gating) leg -- see its comment below.
-  # testsb enrolls the image's MOK in OVMF, so it only passes on an ISO
-  # built with the MOK signing secrets present.
+  # test-secure-boot enrolls the image's MOK in OVMF, so it only passes on
+  # an ISO built with the MOK signing secrets present, and it needs the same
+  # key+cert injected into dozenos-build to take that MOK-enroll path.
   # Artifacts are download-artifact'd by exact name, so a flavor-toml
   # rename/move that drops one fails this job loudly instead of silently
   # unguarding publish.
@@ -693,7 +694,7 @@ jobs:
           - target: testifname
             timeout: 30
             artifact: image-fresh-install-generic
-          - target: testsb
+          - target: test-secure-boot
             timeout: 30
             artifact: image-fresh-install-generic
           - target: test-image-update
@@ -715,14 +716,14 @@ jobs:
       # on this line, with the reason recorded next to it in the matrix.
       ADVISORY_TARGETS: '["test-ci-qcow2"]'
     steps:
-      - name: Mint GitHub App token (dozenos-build checkout)
+      - name: Mint GitHub App token (dozenos-build + dozenos-rebrand checkouts)
         id: app_token
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ vars.BUILD_APP_ID }}
           private-key: ${{ secrets.BUILD_APP_PRIVATE_KEY }}
           owner: dozenos
-          repositories: dozenos-build
+          repositories: dozenos-build,dozenos-rebrand
 
       # The test harness (scripts/check-qemu-install and the make targets)
       # lives in dozenos-build, not in this repo.
@@ -733,6 +734,21 @@ jobs:
           ref: rolling
           token: ${{ steps.app_token.outputs.token }}
           path: dozenos-build
+
+      - name: Checkout dozenos-rebrand
+        if: ${{ matrix.target == 'test-secure-boot' }}
+        uses: actions/checkout@v7
+        with:
+          repository: dozenos/dozenos-rebrand
+          token: ${{ steps.app_token.outputs.token }}
+          path: dozenos-rebrand
+
+      - name: Inject MOK signing key+cert
+        if: ${{ matrix.target == 'test-secure-boot' }}
+        env:
+          MOK_SIGNING_KEY: ${{ secrets.MOK_SIGNING_KEY }}
+          MOK_SIGNING_CERT: ${{ secrets.MOK_SIGNING_CERT }}
+        run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build
 
       - name: Download image artifact
         uses: actions/download-artifact@v8
@@ -793,6 +809,10 @@ jobs:
           docker ps -aq --filter ancestor=ghcr.io/dozenos/dozenos-build:rolling | xargs -r docker rm -f
           run_target
           exit $?
+
+      - name: Clean up injected MOK key
+        if: ${{ always() && matrix.target == 'test-secure-boot' }}
+        run: dozenos-rebrand/release/inject-mok-cert.sh dozenos-build --cleanup
 
   # publish: gather every flavor's artifacts, minisign each file, generate
   # the multi-artifact version.json, publish ONE GitHub Release, and commit
