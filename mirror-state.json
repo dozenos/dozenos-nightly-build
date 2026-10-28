@@ -1,6 +1,6 @@
 {
-  "dozenos-1x": "76aadb42a966da56892ea31ca595a64e9b6583ee",
-  "dozenos-build": "0dd61043c75787ea55d3aeec1532ab957e0b1fa9",
+  "dozenos-1x": "8963a79aed9709d10ab4ea3903bbf017c9b32c19",
+  "dozenos-build": "cfd7caef784201af81ae53dc1edbb0d08be6e574",
   "dozenos-cloud-init": "fe1bb5866fc44c3087782fe4e5e7b7444c966ef8",
   "dozenos-http-api-tools": "cf07b205b123cb7c5fe6018ed50c2c411ea9fcc3",
   "dozenos-rebrand": "b0c12821d5037c5fb5de579c0755126dda1061e5",
@@ -19,6 +19,6 @@
   "shim-signed": "0abbd71c0d6cf490e5ba2a1742324839bbbe1e3a",
   "vyatta-bash": "8d6365f9f90b0499dc96112ed925fbdffc313510",
   "vyatta-biosdevname": "1ca49f98d55ec25e1aef50e089b1df643422005b",
-  "vyatta-cfg": "8c037c2e7f29e499dbd43fb24ee3c3b1c56cfad0",
+  "vyatta-cfg": "43597b7b97290a57a8efc67988b629ff5bc888ab",
   "vyconf": "7c00030d9bd1c71cc7970bff23d9e0d4d7cc1fd6"
 }
