@@ -691,7 +691,10 @@ jobs:
           - target: testtpm
             timeout: 30
             artifact: image-fresh-install-generic
-          - target: testifname
+          - target: test-interface-naming
+            timeout: 30
+            artifact: image-fresh-install-generic
+          - target: test-interface-naming-vmware
             timeout: 30
             artifact: image-fresh-install-generic
           - target: test-secure-boot
