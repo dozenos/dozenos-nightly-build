@@ -1,11 +1,11 @@
 {
-  "dozenos-1x": "86db504b2ded2bbd104bd403453e6a411033ad8a",
+  "dozenos-1x": "deaab46954bd4bdf5ce99af985108317c617706c",
   "dozenos-build": "e662449cfbc6043bc833820bf2a2bbd01ee02a53",
   "dozenos-cloud-init": "a1a121d1fdd7d68eb1593ae9e8d3065a2d50df63",
   "dozenos-http-api-tools": "b5f03a1b2580ddf7e8e28aa86b9e92c5c27082d2",
   "dozenos-rebrand": "b0c12821d5037c5fb5de579c0755126dda1061e5",
   "dozenos-vpp-patches": "50ea3817422f847aad7d3c96c1363f0263351068",
-  "dozenos1x-config": "8d6091709be333530675774a1ab899cadd3acef6",
+  "dozenos1x-config": "c234f87b5f254a001b5b9a1184bc124c9dace0e3",
   "hvinfo": "6973872a0e34922ee8762a0b23302b9a936b3360",
   "ipaddrcheck": "d32c89134cb6dc6319c29fba6e77a7f5f314c5d9",
   "libnss-mapuser": "101d827e0021b0d091a3d32c02c64b709483c190",
