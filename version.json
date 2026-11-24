@@ -1,136 +1,136 @@
 {
-  "version": "2026.11.24-0449-rolling",
+  "version": "2026.11.24-1342-rolling",
   "iso": {
-    "name": "dozenos-2026.11.24-0449-rolling-generic-amd64.iso",
-    "sha256": "1a8a8e226b4edb9708ad0f988d18005683f58bf6a70490aba187b133c2471f74",
-    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-generic-amd64.iso"
+    "name": "dozenos-2026.11.24-1342-rolling-generic-amd64.iso",
+    "sha256": "6fbe4835e9c5bddb069bf647709124f2b86427950c935479c9e6750c105e3c3d",
+    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-generic-amd64.iso"
   },
   "minisig": {
-    "name": "dozenos-2026.11.24-0449-rolling-generic-amd64.iso.minisig",
-    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-generic-amd64.iso.minisig"
+    "name": "dozenos-2026.11.24-1342-rolling-generic-amd64.iso.minisig",
+    "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-generic-amd64.iso.minisig"
   },
   "artifacts": [
     {
       "flavor": "aws",
       "install_type": "fresh-install",
       "format": "vmdk",
-      "name": "dozenos-2026.11.24-0449-rolling-aws-amd64.vmdk",
-      "sha256": "35c9be1c8e734a2e8126f47554d098360e6152b46ee89fb7bab839a3baf0b167",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-aws-amd64.vmdk",
+      "name": "dozenos-2026.11.24-1342-rolling-aws-amd64.vmdk",
+      "sha256": "b9c3bc0512f28d430908de6b0d9f37fb56dedbac94af55584bfdd8e66e218333",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-aws-amd64.vmdk",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-aws-amd64.vmdk.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-aws-amd64.vmdk.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-aws-amd64.vmdk.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-aws-amd64.vmdk.minisig"
       }
     },
     {
       "flavor": "generic",
       "install_type": "fresh-install",
       "format": "iso",
-      "name": "dozenos-2026.11.24-0449-rolling-generic-amd64.iso",
-      "sha256": "1a8a8e226b4edb9708ad0f988d18005683f58bf6a70490aba187b133c2471f74",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-generic-amd64.iso",
+      "name": "dozenos-2026.11.24-1342-rolling-generic-amd64.iso",
+      "sha256": "6fbe4835e9c5bddb069bf647709124f2b86427950c935479c9e6750c105e3c3d",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-generic-amd64.iso",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-generic-amd64.iso.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-generic-amd64.iso.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-generic-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-generic-amd64.iso.minisig"
       }
     },
     {
       "flavor": "kvm",
       "install_type": "fresh-install",
       "format": "iso",
-      "name": "dozenos-2026.11.24-0449-rolling-kvm-amd64.iso",
-      "sha256": "e792fd18134118917f91aacef27e3d95f9e651d44e5ec64e4d6eb1504df89c8d",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-kvm-amd64.iso",
+      "name": "dozenos-2026.11.24-1342-rolling-kvm-amd64.iso",
+      "sha256": "bf0476f2eecbf5ee98c33350bdb8650c558339dd60d77472e650e5f53f41d64b",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-kvm-amd64.iso",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-kvm-amd64.iso.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-kvm-amd64.iso.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-kvm-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-kvm-amd64.iso.minisig"
       }
     },
     {
       "flavor": "kvm",
       "install_type": "fresh-install",
       "format": "qcow2",
-      "name": "dozenos-2026.11.24-0449-rolling-kvm-amd64.qcow2",
-      "sha256": "6cf53c6def89ec2f3ee08cf30907f8a64bfe3b9116357b1db33d0ee895897187",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-kvm-amd64.qcow2",
+      "name": "dozenos-2026.11.24-1342-rolling-kvm-amd64.qcow2",
+      "sha256": "aa7c8fef03308aab6ef6c99310964e7cd30374928cbb226e2a435fb80709a506",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-kvm-amd64.qcow2",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-kvm-amd64.qcow2.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-kvm-amd64.qcow2.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-kvm-amd64.qcow2.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-kvm-amd64.qcow2.minisig"
       }
     },
     {
       "flavor": "proxmox",
       "install_type": "fresh-install",
       "format": "qcow2",
-      "name": "dozenos-2026.11.24-0449-rolling-proxmox-amd64.qcow2",
-      "sha256": "5efa82209dec31acf95d381781180863c1709dea67458284bab95b0adf19ab13",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-proxmox-amd64.qcow2",
+      "name": "dozenos-2026.11.24-1342-rolling-proxmox-amd64.qcow2",
+      "sha256": "d3c6884400f807c63677a13b6722bbaa3ed240aed42f0dddac0b4ac8edcee88c",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-proxmox-amd64.qcow2",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-proxmox-amd64.qcow2.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-proxmox-amd64.qcow2.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-proxmox-amd64.qcow2.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-proxmox-amd64.qcow2.minisig"
       }
     },
     {
       "flavor": "vultr",
       "install_type": "fresh-install",
       "format": "iso",
-      "name": "dozenos-2026.11.24-0449-rolling-vultr-fresh-install-amd64.iso",
-      "sha256": "16f8bb350ade7599f1d56f97741635ded8eea0755ca9166540853b02d2017d27",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-vultr-fresh-install-amd64.iso",
+      "name": "dozenos-2026.11.24-1342-rolling-vultr-fresh-install-amd64.iso",
+      "sha256": "57f48400e3cdd0f15936853f20f09eb9491bdc7ec8f130fa58f4ba50e8399fa5",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-vultr-fresh-install-amd64.iso",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-vultr-fresh-install-amd64.iso.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-vultr-fresh-install-amd64.iso.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-vultr-fresh-install-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-vultr-fresh-install-amd64.iso.minisig"
       }
     },
     {
       "flavor": "vultr",
       "install_type": "fresh-install",
       "format": "qcow2",
-      "name": "dozenos-2026.11.24-0449-rolling-vultr-amd64.qcow2",
-      "sha256": "2bd702977a84e78a2536ec7de1c13647a831f0c99948de1a7c2e13ca25977b45",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-vultr-amd64.qcow2",
+      "name": "dozenos-2026.11.24-1342-rolling-vultr-amd64.qcow2",
+      "sha256": "48d3092e6434fda4ed16d5a3db86f0200225348b8a6f1929a97eb0a7ea8aa9f3",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-vultr-amd64.qcow2",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-vultr-amd64.qcow2.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-vultr-amd64.qcow2.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-vultr-amd64.qcow2.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-vultr-amd64.qcow2.minisig"
       }
     },
     {
       "flavor": "aws",
       "install_type": "upgrade",
       "format": "iso",
-      "name": "dozenos-2026.11.24-0449-rolling-aws-amd64.iso",
-      "sha256": "c39cd85ecb3e2d2e878cc0ae682277cb7a05e4014c8ae55cc1512371ea5abc94",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-aws-amd64.iso",
+      "name": "dozenos-2026.11.24-1342-rolling-aws-amd64.iso",
+      "sha256": "06042ed3195a341e437fa775fc4b7c39de75363cbd20b7d79f8c98207ce87a8e",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-aws-amd64.iso",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-aws-amd64.iso.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-aws-amd64.iso.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-aws-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-aws-amd64.iso.minisig"
       }
     },
     {
       "flavor": "proxmox",
       "install_type": "upgrade",
       "format": "iso",
-      "name": "dozenos-2026.11.24-0449-rolling-proxmox-amd64.iso",
-      "sha256": "1a8e460dcd1fab5dd6b6cd5998288b006f8c254454fe1a0db166571f8560b7dd",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-proxmox-amd64.iso",
+      "name": "dozenos-2026.11.24-1342-rolling-proxmox-amd64.iso",
+      "sha256": "f6dea6743beb2797882e3b73699225a5bc951612737b40bf7048d9851f00cd9a",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-proxmox-amd64.iso",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-proxmox-amd64.iso.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-proxmox-amd64.iso.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-proxmox-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-proxmox-amd64.iso.minisig"
       }
     },
     {
       "flavor": "vultr",
       "install_type": "upgrade",
       "format": "iso",
-      "name": "dozenos-2026.11.24-0449-rolling-vultr-amd64.iso",
-      "sha256": "9b0fcf2734a40dc66cb09e73450c3f7372d563edf7971c5cb019edd5785ad563",
-      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-vultr-amd64.iso",
+      "name": "dozenos-2026.11.24-1342-rolling-vultr-amd64.iso",
+      "sha256": "4ad5644b5fa698d8dd689cc37bf003a1def11a2b177f462f5ac0492da1c2f1cd",
+      "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-vultr-amd64.iso",
       "minisig": {
-        "name": "dozenos-2026.11.24-0449-rolling-vultr-amd64.iso.minisig",
-        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-0449-rolling/dozenos-2026.11.24-0449-rolling-vultr-amd64.iso.minisig"
+        "name": "dozenos-2026.11.24-1342-rolling-vultr-amd64.iso.minisig",
+        "url": "https://github.com/dozenos/dozenos-nightly-build/releases/download/2026.11.24-1342-rolling/dozenos-2026.11.24-1342-rolling-vultr-amd64.iso.minisig"
       }
     }
   ],
   "minisign_pubkey_file": "minisign.pub",
-  "published_at": "2026-11-24T06:10:11Z"
+  "published_at": "2026-11-24T15:07:38Z"
 }
